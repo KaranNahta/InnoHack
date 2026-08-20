@@ -1,207 +1,288 @@
+"""
+CASPER-Gov: LLM Court-Ready Enforcement Generator
+==================================================
+Generates court-ready, formal legal enforcement notices and show-cause directives
+using `instructor` and Pydantic schema validation with deterministic fallback logic.
+"""
+
+from __future__ import annotations
+
 import os
 import sys
 import json
 import logging
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
-import openai
-import anthropic
+from typing import List, Dict, Any, Optional, Union
+
 import instructor
 
-# Configure logging
+from src.llm.schemas import CostDriver, LegalCitation, EnforcementNotice
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("report_generator")
 
-# Pydantic schema models
-class CostDriver(BaseModel):
-    feature: str = Field(..., description="Feature/indicator name")
-    contribution_percentage: float = Field(..., description="SHAP feature contribution percentage")
-    impact_direction: str = Field(..., description="INCREASE or DECREASE direction")
-
-class EnforcementNotice(BaseModel):
-    severity_rating: str = Field(..., description="Notice severity level: CRITICAL, HIGH, or MEDIUM")
-    probable_cause: str = Field(..., description="Summarized probable cause of the pricing anomaly")
-    top_cost_drivers: List[CostDriver] = Field(..., description="List of top cost drivers attributed by SHAP analysis")
-    recommended_action: str = Field(..., description="Recommended regulatory action course")
-    draft_enforcement_notice_text: str = Field(..., description="Formal legal warning prose of the warning notice")
 
 def get_instructor_client() -> Optional[Any]:
     """
     Attempts to initialize instructor client using OpenAI or Anthropic keys.
-    Returns None if no keys are found.
+    Returns None if no keys are found in the environment.
     """
     openai_key = os.environ.get("OPENAI_API_KEY")
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    
+
     if openai_key:
-        logger.info("Initializing Instructor wrapped OpenAI client...")
-        return instructor.from_openai(openai.OpenAI(api_key=openai_key))
+        try:
+            import openai
+            logger.info("Initializing Instructor wrapped OpenAI client...")
+            return instructor.from_openai(openai.OpenAI(api_key=openai_key))
+        except ImportError:
+            logger.warning("openai package not installed.")
     elif anthropic_key:
-        logger.info("Initializing Instructor wrapped Anthropic client...")
-        return instructor.from_anthropic(anthropic.Anthropic(api_key=anthropic_key))
+        try:
+            import anthropic
+            logger.info("Initializing Instructor wrapped Anthropic client...")
+            return instructor.from_anthropic(anthropic.Anthropic(api_key=anthropic_key))
+        except ImportError:
+            logger.warning("anthropic package not installed.")
     return None
+
 
 def generate_fallback_notice(
     anomaly_alert: Dict[str, Any],
     shap_drivers: List[Dict[str, Any]],
-    retrieved_precedents: List[str]
+    retrieved_precedents: Union[List[str], List[Dict[str, Any]]],
 ) -> EnforcementNotice:
     """
     Generates a high-quality, court-ready EnforcementNotice payload, serving as a robust,
     deterministic fallback when API keys are not present.
     """
-    logger.info("Generating enforcement notice using fallback template parser...")
+    logger.info("Generating enforcement notice using fallback legal template parser...")
+
+    # 1. Anomaly details & severity calculation
+    sku = str(anomaly_alert.get("sku_name", "Essential Commodity"))
+    region = str(anomaly_alert.get("state") or anomaly_alert.get("region") or "National Capital Region")
+    observed_price = float(anomaly_alert.get("observed_price", 3500.0))
+    ceiling_price = float(anomaly_alert.get("fair_price_ceiling", observed_price * 0.80))
+    price_deviation = round(((observed_price - ceiling_price) / max(ceiling_price, 1e-5)) * 100.0, 2)
     
-    # 1. Determine severity
-    severity_score = anomaly_alert.get("severity_score", 0.5)
-    if severity_score >= 0.7:
+    vendors = anomaly_alert.get("vendors_involved") or [anomaly_alert.get("market_mandi") or anomaly_alert.get("target_entity", "Licensed Wholesalers")]
+    if isinstance(vendors, str):
+        target_entity = vendors
+    else:
+        target_entity = ", ".join([str(v) for v in vendors])
+
+    severity_score = float(anomaly_alert.get("severity_score", 0.5))
+    if severity_score >= 0.7 or price_deviation >= 25.0:
         severity = "CRITICAL"
-        action = "Issue immediate warning notice and trigger mandatory statutory cost audits under Section 3 of the Essential Commodities Act, 1955."
-    elif severity_score >= 0.4:
+        action = "Issue Immediate Show-Cause Notice & Trigger Mandatory Statutory Cost Audit under Section 3 of the Essential Commodities Act, 1955."
+    elif severity_score >= 0.4 or price_deviation >= 10.0:
         severity = "HIGH"
-        action = "Issue compliance warning letter and require pricing disclosures from registered wholesalers within 48 hours."
+        action = "Issue Statutory Compliance Warning & Require Transaction Ledger Disclosures within 48 hours."
     else:
         severity = "MEDIUM"
-        action = "Flag for active monitoring and verify margins against statutory benchmark limits."
-        
-    # 2. Extract top cost drivers
-    pydantic_drivers = []
+        action = "Flag for Enhanced Surveillance & Inspect Wholesale Margins against Benchmark Caps."
+
+    date_str = str(anomaly_alert.get("date", "2026-08-21"))
+    notice_id = f"REG-ENF-{date_str.replace('-', '')}-{hash(target_entity + sku) % 10000:04d}"
+
+    # 2. Structure Cost Drivers
+    structured_drivers: List[CostDriver] = []
     driver_texts = []
     for d in shap_drivers[:3]:
-        pydantic_drivers.append(CostDriver(
-            feature=d["feature"],
-            contribution_percentage=d["contribution_percentage"],
-            impact_direction=d["impact_direction"]
+        factor = str(d.get("factor_name") or d.get("feature", "Market Pricing Lag"))
+        impact = float(d.get("impact_percentage") or d.get("contribution_percentage", 25.0))
+        structured_drivers.append(CostDriver(
+            factor_name=factor,
+            impact_percentage=impact,
         ))
-        dir_word = "upward pressure" if d["impact_direction"] == "INCREASE" else "downward pressure"
-        driver_texts.append(f"{d['feature']} (contributing {d['contribution_percentage']}% {dir_word})")
-        
-    # 3. Probable cause formulation
-    probable_cause = f"Abnormal pricing behavior flagged for SKU '{anomaly_alert.get('sku_name', 'Staple')}' in region '{anomaly_alert.get('state', 'Region')}' on {anomaly_alert.get('date', 'today')}. "
-    probable_cause += "Drivers: " + ", ".join(driver_texts) + "."
+        driver_texts.append(f"{factor} ({impact}% contribution)")
+
+    # 3. Structure Legal Citations
+    structured_citations: List[LegalCitation] = []
+    precedent_lines = []
     
-    # 4. Format precedents
-    precedents_block = "\n".join([f"- {doc}" for doc in retrieved_precedents])
-    
-    # 5. Build formal legal notice text
-    notice_text = f"""OFFICIAL WARNING AND ENFORCEMENT NOTICE
+    for p in retrieved_precedents:
+        if isinstance(p, dict):
+            statute = p.get("statute", "Essential Commodities Act, 1955")
+            section = p.get("section", "Section 3")
+            excerpt = p.get("excerpt", "")
+            rationale = p.get("title") or f"Powers to regulate fair pricing and prevent unjustified margin gouging under {section}."
+            structured_citations.append(LegalCitation(
+                statute_name=statute,
+                section_clause=section,
+                relevance_summary=rationale,
+            ))
+            precedent_lines.append(f"- {statute} ({section}): {rationale}")
+        else:
+            text = str(p)
+            structured_citations.append(LegalCitation(
+                statute_name="Essential Commodities Act 1955",
+                section_clause="Section 3(2)(c)",
+                relevance_summary=text[:100],
+            ))
+            precedent_lines.append(f"- {text}")
+
+    if not structured_citations:
+        structured_citations = [
+            LegalCitation(
+                statute_name="Essential Commodities Act, 1955",
+                section_clause="Section 3",
+                relevance_summary="Powers to control production, supply, and price ceiling breaches of essential commodities.",
+            ),
+            LegalCitation(
+                statute_name="Competition Act, 2002",
+                section_clause="Section 3(3)(a)",
+                relevance_summary="Prohibition of anti-competitive agreements and synchronized price collusion.",
+            ),
+        ]
+        precedent_lines = [
+            "- Essential Commodities Act 1955 (Section 3): Statutory price control directives.",
+            "- Competition Act 2002 (Section 3): Anti-competitive cartelization enforcement.",
+        ]
+
+    # 4. Formulate Probable Cause
+    probable_cause = (
+        f"Abnormal pricing behavior flagged for SKU '{sku}' in region '{region}' on {date_str}. "
+        f"Observed price (₹{observed_price:.2f}/Qtl) exceeds fair price ceiling (₹{ceiling_price:.2f}/Qtl) by {price_deviation}%. "
+        f"Attributed drivers: {', '.join(driver_texts)}."
+    )
+
+    # 5. Build Formal Legal Order Text
+    precedents_block = "\n".join(precedent_lines)
+    drivers_block = "\n".join([f"  [{i+1}] {cd.factor_name}: {cd.impact_percentage}% contribution" for i, cd in enumerate(structured_drivers)])
+
+    draft_text = f"""OFFICIAL STATUTORY WARNING & ENFORCEMENT ORDER
 ISSUED BY THE CASPER-GOV PRICE STABILIZATION & COMPLIANCE AUTHORITY
+NOTICE IDENTIFIER: {notice_id}
 
-Date: {anomaly_alert.get('date', '2026-08-20')}
-Region: {anomaly_alert.get('state', 'Punjab')}
-To: Registered Wholesalers & Licensed Retailers (Vendors: {', '.join(anomaly_alert.get('vendors_involved', ['Licensed Wholesalers']))})
-Subject: Mandatory Warning Notice of statutory Compliance Audit for {anomaly_alert.get('sku_name', 'Essential SKU')} pricing anomalies.
+Date of Issuance: {date_str}
+Jurisdictional Region: {region}
+Respondent Entity: {target_entity}
+Commodity In Question: {sku}
 
-Pursuant to Section 3 of the Essential Commodities Act, 1955, you are hereby served a formal pricing warning notice.
+STATUTORY NOTICE & MANDATORY ORDER:
+Pursuant to Section 3 of the Essential Commodities Act, 1955, and read in conjunction with Section 3 of the Competition Act, 2002, the Price Stabilization & Compliance Authority hereby issues this formal statutory warning notice.
 
-On {anomaly_alert.get('date', '2026-08-20')}, the CASPER-Gov compliance monitoring platform flagged a major pricing anomaly regarding your transactions for SKU '{anomaly_alert.get('sku_name', 'Staple')}' within {anomaly_alert.get('state', 'Region')}:
-  - Pricing Alert Type: {anomaly_alert.get('anomaly_type', 'PRICE_GOUGING_ALERT')}
-  - Calculated Severity Rating: {severity}
+1. FACTUAL FINDINGS & PRICE ANOMALY:
+On {date_str}, automated surveillance flagged a major market distortion:
+  - Observed Market Price: ₹{observed_price:.2f} per Quintal
+  - Calibrated Statutory Ceiling (p90): ₹{ceiling_price:.2f} per Quintal
+  - Price Deviation: +{price_deviation}% above fair calibrated bounds
+  - Anomaly Severity Classification: {severity}
 
-COST ATTRIBUTION ANALYSIS:
-Our SHAP attribution explainability models mapped the primary price drivers for this anomaly:
-"""
-    for idx, d in enumerate(shap_drivers[:3]):
-        notice_text += f"  [{idx+1}] {d['feature']}: {d['contribution_percentage']}% contribution ({d['impact_direction']} impact)\n"
-        
-    notice_text += f"""
-RELEVANT STATUTORY PRECEDENTS & REGULATORY GUIDELINES:
+2. COST ATTRIBUTION & SHAP DRIVERS:
+Our quantitative explainability attribution verified the following contributing factors:
+{drivers_block}
+
+3. APPLICABLE STATUTORY CITATIONS:
 {precedents_block}
 
-ORDER AND DIRECTIVES:
-You are hereby commanded to submit a detailed transaction cost sheet ledger within 48 hours of receipt of this warning. Continued pricing of essential goods outside calibrated statutory bands, or failure to comply with margins audits, will lead to immediate cancellation of trading licenses, search and seizure of stock reserves, and prosecution under the Essential Commodities Act, 1955.
+4. REGULATORY DIRECTIVE & SHOW-CAUSE DEMAND:
+The respondent entity ({target_entity}) is hereby ORDERED to submit a certified cost sheet and transaction ledger justifying all markups within 48 hours of service of this notice. Continued trading above statutory ceilings or failure to furnish compliance documentation will result in immediate cancellation of trading licenses, attachment of mandi lots, and prosecution under Section 7 of the Essential Commodities Act, 1955.
 
-Issued by Order of the Price Stabilization Commissioner, CASPER-Gov.
+BY ORDER OF THE COMMISSIONER OF REGULATORY PRICING
+CASPER-Gov Enforcement Directorate
 """
+
     return EnforcementNotice(
+        notice_id=notice_id,
         severity_rating=severity,
+        sku_name=sku,
+        target_entity=target_entity,
+        region=region,
+        observed_price=observed_price,
+        fair_price_ceiling=ceiling_price,
+        price_deviation_pct=price_deviation,
         probable_cause=probable_cause,
-        top_cost_drivers=pydantic_drivers,
+        top_cost_drivers=structured_drivers,
+        legal_citations=structured_citations,
         recommended_action=action,
-        draft_enforcement_notice_text=notice_text
+        draft_notice_text=draft_text,
     )
+
 
 def generate_enforcement_notice(
     anomaly_alert: Dict[str, Any],
     shap_drivers: List[Dict[str, Any]],
-    retrieved_precedents: List[str]
+    retrieved_precedents: Union[List[str], List[Dict[str, Any]]],
 ) -> EnforcementNotice:
     """
-    Generates structured, schema-validated enforcement notices.
-    Utilizes instructor API call if key is set, else falls back to high-quality fallback template parser.
+    Generates structured, schema-validated enforcement notices matching the EnforcementNotice model.
+    Utilizes Instructor LLM extraction if an API key is available; otherwise falls back to
+    the court-ready deterministic legal template parser.
     """
     client = get_instructor_client()
-    
+
     if not client:
         return generate_fallback_notice(anomaly_alert, shap_drivers, retrieved_precedents)
-        
+
     logger.info("Executing Instructor LLM extraction call...")
-    
+
     prompt = f"""
-    You are a regulatory system notice writer for CASPER-Gov. Write a court-ready warning notice.
+    You are a Senior Regulatory Compliance Counsel for CASPER-Gov drafting court-ready enforcement notices.
     
-    Anomaly Details:
-    {json.dumps(anomaly_alert, indent=2)}
+    Anomaly Event Details:
+    {json.dumps(anomaly_alert, indent=2, default=str)}
     
     SHAP Cost Driver Breakdown:
-    {json.dumps(shap_drivers, indent=2)}
+    {json.dumps(shap_drivers, indent=2, default=str)}
     
-    Retrieved Legal Precedents:
-    {chr(10).join(retrieved_precedents)}
+    Retrieved Statutory Precedents:
+    {json.dumps(retrieved_precedents, indent=2, default=str)}
     
-    Extract and structure the legal enforcement notice payload matching the EnforcementNotice schema.
+    Produce a complete, formal, court-ready EnforcementNotice JSON payload matching the schema.
     """
-    
-    # Select LLM model based on key
-    if os.environ.get("OPENAI_API_KEY"):
-        model_name = "gpt-4o-mini"
-    else:
-        model_name = "claude-3-5-sonnet-20240620"
-        
+
+    model_name = "gpt-4o-mini" if os.environ.get("OPENAI_API_KEY") else "claude-3-5-sonnet-20240620"
+
     try:
         response = client.chat.completions.create(
             model=model_name,
             response_model=EnforcementNotice,
             messages=[
-                {"role": "system", "content": "You are a senior regulatory compliance officer drafting official warnings."},
-                {"role": "user", "content": prompt}
-            ]
+                {
+                    "role": "system",
+                    "content": "You are a senior regulatory compliance officer drafting official warnings and show-cause orders.",
+                },
+                {"role": "user", "content": prompt},
+            ],
         )
         return response
     except Exception as e:
-        logger.error("Instructor API call failed: %s. Falling back to template.", str(e))
+        logger.error("Instructor API call failed: %s. Falling back to legal template.", str(e))
         return generate_fallback_notice(anomaly_alert, shap_drivers, retrieved_precedents)
 
+
 def main():
-    # Simple CLI test
-    import json
     anomaly = {
-        "date": "2026-08-20",
+        "date": "2026-08-21",
         "sku_name": "Tomato",
         "state": "Uttar Pradesh",
+        "market_mandi": "Varanasi Mandi",
         "anomaly_type": "PRICE_GOUGING_ALERT",
         "severity_score": 0.85,
-        "vendors_involved": ["VEND_0110"]
+        "observed_price": 4200.0,
+        "fair_price_ceiling": 3100.0,
+        "vendors_involved": ["VEND_0110"],
     }
-    
+
     drivers = [
-        {"feature": "Mandi Arrival Supply Shock", "contribution_percentage": 52.1, "impact_direction": "INCREASE"},
-        {"feature": "Recent 7-Day Price Lag", "contribution_percentage": 31.4, "impact_direction": "INCREASE"},
-        {"feature": "Freight/Transportation Cost Index", "contribution_percentage": 16.5, "impact_direction": "INCREASE"}
+        {"factor_name": "Mandi Arrival Supply Shock", "impact_percentage": 52.1},
+        {"factor_name": "Recent 7-Day Price Lag", "impact_percentage": 31.4},
+        {"factor_name": "Freight / Transportation Index", "impact_percentage": 16.5},
     ]
-    
-    precedents = [
-        "Essential Commodities Act (Section 3) - Section 3 allows the government to intervene and penalize artificial shortages.",
-        "Regulatory Intervention Policy - Modal price ceiling breach triggers warnings."
-    ]
-    
+
+    from src.rag.vector_store import retrieve_legal_precedents
+    precedents = retrieve_legal_precedents("Mandatory price ceiling breach and supply shock", top_k=2)
+
     notice = generate_enforcement_notice(anomaly, drivers, precedents)
-    logger.info("Generated Enforcement Notice payload:")
-    logger.info("\n%s", notice.model_dump_json(indent=4))
+    logger.info("Generated Notice ID: %s", notice.notice_id)
+    logger.info("Severity: %s", notice.severity_rating)
+    logger.info("\n%s", notice.draft_notice_text)
+
 
 if __name__ == "__main__":
     main()
