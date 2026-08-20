@@ -342,8 +342,20 @@ with tab_audit:
     })
 
     if not df_presentation.empty:
+        rows_per_page = 100
+        n_pages = int(np.ceil(len(df_presentation) / rows_per_page))
+        
+        pag_col1, pag_col2 = st.columns([1, 4])
+        with pag_col1:
+            page_number = st.number_input("Page", min_value=1, max_value=max(1, n_pages), value=1, step=1, key="audit_page_num")
+        with pag_col2:
+            start_idx = (page_number - 1) * rows_per_page
+            end_idx = min(start_idx + rows_per_page, len(df_presentation))
+            st.markdown(f"<div style='padding-top: 10px; color: #94a3b8;'>Showing records <b>{start_idx + 1}</b> to <b>{end_idx}</b> of <b>{len(df_presentation)}</b></div>", unsafe_allow_html=True)
+            
+        df_page = df_presentation.iloc[start_idx:end_idx]
         st.dataframe(
-            df_presentation.style.apply(highlight_breaches, axis=1),
+            df_page.style.apply(highlight_breaches, axis=1),
             use_container_width=True,
             height=500
         )
@@ -382,6 +394,11 @@ with tab_scenario:
                 subsidy_level = st.slider("Targeted Consumer Subsidy (INR/kg)", min_value=0.0, max_value=10.0, value=0.0, step=0.5)
                 
             latest_row = df_ts.iloc[[-1]].copy()
+            if df_clusters is not None:
+                latest_row = pd.merge(latest_row, df_clusters[["sku_name", "cluster_id"]], on="sku_name", how="left")
+            if "cluster_id" not in latest_row.columns:
+                latest_row["cluster_id"] = -1
+                
             latest_row["macro_pca_3"] += float(fuel_shock / 100.0) * 0.5
             latest_row["supply_shock_zscore"] -= float(monsoon_fail) * 1.5
             latest_row["supply_shock_zscore"] -= float(import_duty_adj / 100.0) * 0.8
@@ -400,10 +417,6 @@ with tab_scenario:
             cat_cols = ["sku_name", "state", "district", "market_mandi", "sku_variety", "cluster_id"]
             
             X_scenario = latest_row[feature_cols].copy()
-            if df_clusters is not None:
-                X_scenario = pd.merge(X_scenario, df_clusters[["sku_name", "cluster_id"]], on="sku_name", how="left")
-            if "cluster_id" not in X_scenario.columns:
-                X_scenario["cluster_id"] = -1
                 
             if "conformal" in models:
                 for col in cat_cols:
