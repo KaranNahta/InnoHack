@@ -675,3 +675,109 @@ class TestDetectAnomaliesPipeline:
         for alert in alerts:
             s = alert["severity_score"]
             assert 0.0 <= s <= 1.0, f"severity_score {s} out of [0, 1]."
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests for detect_artificial_scarcity (Slide 14 — Hoarding Detection)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDetectArtificialScarcity:
+    """Unit tests for the cross-signal hoarding/artificial scarcity detector."""
+
+    def _make_scarcity_df(self, n: int = 40) -> pd.DataFrame:
+        """
+        Builds a DataFrame where the last few rows have a price spike
+        coinciding with a supply collapse — the hoarding signature.
+        """
+        rng = pd.date_range("2025-01-01", periods=n, freq="D")
+        base_price = 1000.0
+        base_arr = 50.0
+
+        prices = np.full(n, base_price)
+        arrivals = np.full(n, base_arr)
+
+        # Last 5 rows: price spikes +50%, arrivals collapse to 5
+        prices[-5:] = base_price * 1.5
+        arrivals[-5:] = 5.0
+
+        return pd.DataFrame({
+            "observation_date": rng,
+            "sku_name": "Tomato",
+            "state": "Uttar Pradesh",
+            "market_mandi": "Lucknow Mandi",
+            "modal_price_per_quintal": prices,
+            "arrival_quantity_tonnes": arrivals,
+        })
+
+    def test_returns_list(self):
+        detector = AnomalyDetector()
+        df = self._make_scarcity_df()
+        alerts = detector.detect_artificial_scarcity(df)
+        assert isinstance(alerts, list), "Should return a list"
+
+    def test_detects_hoarding_event(self):
+        """Rows with price spike + arrival collapse should trigger alerts."""
+        detector = AnomalyDetector()
+        df = self._make_scarcity_df(n=40)
+        alerts = detector.detect_artificial_scarcity(df, price_z_threshold=1.0, arrival_z_threshold=-1.0)
+        assert len(alerts) > 0, "Expected at least one ARTIFICIAL_SCARCITY alert"
+
+    def test_alert_type_is_correct(self):
+        detector = AnomalyDetector()
+        df = self._make_scarcity_df(n=40)
+        alerts = detector.detect_artificial_scarcity(df, price_z_threshold=1.0, arrival_z_threshold=-1.0)
+        for a in alerts:
+            assert a.anomaly_type == "ARTIFICIAL_SCARCITY", f"Wrong type: {a.anomaly_type}"
+
+    def test_no_alerts_when_prices_normal(self):
+        """Flat price time-series should generate zero alerts."""
+        detector = AnomalyDetector()
+        rng = pd.date_range("2025-01-01", periods=40, freq="D")
+        df = pd.DataFrame({
+            "observation_date": rng,
+            "sku_name": "Potato",
+            "state": "Maharashtra",
+            "market_mandi": "Pune Mandi",
+            "modal_price_per_quintal": np.full(40, 1000.0),
+            "arrival_quantity_tonnes": np.full(40, 100.0),
+        })
+        alerts = detector.detect_artificial_scarcity(df)
+        assert len(alerts) == 0, "Expected zero alerts for flat time-series"
+
+    def test_severity_score_in_range(self):
+        detector = AnomalyDetector()
+        df = self._make_scarcity_df(n=40)
+        alerts = detector.detect_artificial_scarcity(df, price_z_threshold=1.0, arrival_z_threshold=-1.0)
+        for a in alerts:
+            assert 0.0 <= a.severity_score <= 1.0, f"Severity {a.severity_score} out of [0,1]"
+
+    def test_alert_details_have_required_keys(self):
+        detector = AnomalyDetector()
+        df = self._make_scarcity_df(n=40)
+        alerts = detector.detect_artificial_scarcity(df, price_z_threshold=1.0, arrival_z_threshold=-1.0)
+        for a in alerts:
+            assert "price_z_score" in a.details
+            assert "arrival_z_score" in a.details
+            assert "interpretation" in a.details
+
+    def test_multiple_skus_isolated(self):
+        """Hoarding in one SKU must not contaminate another."""
+        rng = pd.date_range("2025-01-01", periods=40, freq="D")
+        prices_spike = np.full(40, 1000.0)
+        prices_spike[-5:] = 1700.0
+        arr_collapse = np.full(40, 50.0)
+        arr_collapse[-5:] = 3.0
+
+        df = pd.DataFrame({
+            "observation_date": list(rng) * 2,
+            "sku_name": ["Tomato"] * 40 + ["Potato"] * 40,
+            "state": "Uttar Pradesh",
+            "market_mandi": "Lucknow Mandi",
+            "modal_price_per_quintal": np.concatenate([prices_spike, np.full(40, 800.0)]),
+            "arrival_quantity_tonnes": np.concatenate([arr_collapse, np.full(40, 100.0)]),
+        })
+        detector = AnomalyDetector()
+        alerts = detector.detect_artificial_scarcity(df, price_z_threshold=1.0, arrival_z_threshold=-1.0)
+        alert_skus = {a.sku_name for a in alerts}
+        assert "Tomato" in alert_skus, "Tomato should be flagged"
+        assert "Potato" not in alert_skus, "Potato should NOT be flagged"

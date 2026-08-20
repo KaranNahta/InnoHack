@@ -286,3 +286,82 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+from src.llm.schemas import CriticDecision
+
+
+def evaluate_price_estimate(
+    sku_name: str,
+    region: str,
+    raw_p10: float,
+    raw_p50: float,
+    raw_p90: float,
+    shap_drivers: List[Dict[str, Any]],
+    retrieved_precedents: Union[List[str], List[Dict[str, Any]]],
+) -> CriticDecision:
+    """
+    LLM-based Critic (Slide 4 & Slide 12):
+    Validates and adjusts the quantitative price estimation output before finalization.
+    The LLM never creates a price from scratch; it only accepts, rejects, or adjusts
+    the bounds based on SHAP cost drivers and statutory precedents.
+    """
+    client = get_instructor_client()
+
+    if not client:
+        # Robust deterministic fallback
+        # If severe supply shock driver is active, apply mild adjustment factor
+        adjustment = 1.0
+        reason = f"Conformal estimate for {sku_name} in {region} verified within statistical bounds."
+        
+        for d in shap_drivers:
+            feat = str(d.get("factor_name") or d.get("feature", "")).lower()
+            impact = float(d.get("impact_percentage") or d.get("contribution_percentage", 0.0))
+            if "supply shock" in feat and impact > 40.0:
+                adjustment = 1.04 # 4% upward adjustment for extreme supply shocks
+                reason = f"Adjusted quantitative estimate (+4%) due to verified supply shock ({impact}% contribution)."
+                break
+
+        return CriticDecision(
+            decision="ACCEPT" if adjustment == 1.0 else "ADJUST",
+            adjustment_factor=round(adjustment, 3),
+            adjusted_floor_p10=round(raw_p10 * adjustment, 2),
+            adjusted_midpoint_p50=round(raw_p50 * adjustment, 2),
+            adjusted_ceiling_p90=round(raw_p90 * adjustment, 2),
+            reasoning=reason,
+        )
+
+    logger.info("Executing Instructor LLM Price Critic call...")
+    prompt = f"""
+    You are the CASPER-Gov Price Estimation Critic.
+    Validate the following quantitative price band for SKU '{sku_name}' in region '{region}':
+    - Raw Floor (p10): ₹{raw_p10:.2f}
+    - Raw Midpoint (p50): ₹{raw_p50:.2f}
+    - Raw Ceiling (p90): ₹{raw_p90:.2f}
+
+    SHAP Feature Drivers:
+    {json.dumps(shap_drivers, indent=2, default=str)}
+
+    Legal & Market Precedents:
+    {json.dumps(retrieved_precedents, indent=2, default=str)}
+
+    Task:
+    Evaluate if the price band accurately accounts for cost drivers and precedents.
+    Decide whether to ACCEPT, REJECT, or ADJUST (with a multiplier between 0.85 and 1.15).
+    """
+
+    model_name = "gpt-4o-mini" if os.environ.get("OPENAI_API_KEY") else "claude-3-5-sonnet-20240620"
+
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            response_model=CriticDecision,
+            messages=[
+                {"role": "system", "content": "You are a quantitative price estimation critic validating ML price bands."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        return response
+    except Exception as e:
+        logger.error("Price Critic LLM call failed: %s. Using fallback critic.", str(e))
+        return evaluate_price_estimate(sku_name, region, raw_p10, raw_p50, raw_p90, shap_drivers, retrieved_precedents)

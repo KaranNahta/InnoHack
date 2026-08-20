@@ -45,3 +45,12 @@ class EnforcementNotice(BaseModel):
     @property
     def draft_enforcement_notice_text(self) -> str:
         return self.draft_notice_text
+
+
+class CriticDecision(BaseModel):
+    decision: str = Field(description="ACCEPT, REJECT, or ADJUST")
+    adjustment_factor: float = Field(default=1.0, description="Multiplier between 0.80 and 1.20 to adjust price band")
+    adjusted_floor_p10: float = Field(description="Final adjusted lower bound")
+    adjusted_midpoint_p50: float = Field(description="Final adjusted fair estimate")
+    adjusted_ceiling_p90: float = Field(description="Final adjusted upper bound")
+    reasoning: str = Field(description="Detailed rationale grounded on SHAP drivers and statutory precedents")

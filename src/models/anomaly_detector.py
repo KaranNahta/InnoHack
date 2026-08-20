@@ -322,6 +322,104 @@ class AnomalyDetector:
         return alerts
 
     # ------------------------------------------------------------------
+    # Detection: hoarding / artificial scarcity (Slide 14)
+    # ------------------------------------------------------------------
+
+    def detect_artificial_scarcity(
+        self,
+        df: pd.DataFrame,
+        price_z_threshold: float = 1.5,
+        arrival_z_threshold: float = -1.5,
+        window: int = 14,
+    ) -> List[AnomalyAlert]:
+        """
+        Detect hoarding and artificial scarcity events (Slide 14).
+
+        Strategy
+        --------
+        For each (sku, mandi) time-series compute rolling 14-day z-scores
+        for both price and arrival volume.  Observations where price
+        z-score > price_z_threshold AND arrival z-score < arrival_z_threshold
+        are flagged as ARTIFICIAL_SCARCITY – indicative of a hoarder
+        deliberately withholding supply to inflate prices.
+
+        Parameters
+        ----------
+        df                  : Input DataFrame sorted by date.
+        price_z_threshold   : Min price z-score to consider a spike (default 1.5).
+        arrival_z_threshold : Max arrival z-score to consider a suppression (default -1.5).
+        window              : Rolling window in days for mean/std computation.
+
+        Returns
+        -------
+        List[AnomalyAlert]
+            One ARTIFICIAL_SCARCITY alert per qualifying observation.
+        """
+        alerts: List[AnomalyAlert] = []
+        df = df.copy()
+        df[self.date_col] = pd.to_datetime(df[self.date_col])
+        df = df.sort_values([self.sku_col, self.mandi_col, self.date_col])
+
+        grp_price = df.groupby([self.sku_col, self.mandi_col])[self.price_col]
+        grp_arr = df.groupby([self.sku_col, self.mandi_col])[self.arrival_col]
+
+        df["_price_mean"] = grp_price.transform(
+            lambda x: x.rolling(window, min_periods=3).mean()
+        )
+        df["_price_std"] = grp_price.transform(
+            lambda x: x.rolling(window, min_periods=3).std()
+        ).fillna(1.0)
+        df["_price_z"] = (df[self.price_col] - df["_price_mean"]) / (df["_price_std"] + 1e-6)
+
+        # Arrival volume rolling z-score
+        arrivals = df[self.arrival_col].fillna(0)
+        arr_mean = grp_arr.transform(
+            lambda x: x.fillna(0).rolling(window, min_periods=3).mean()
+        )
+        arr_std = grp_arr.transform(
+            lambda x: x.fillna(0).rolling(window, min_periods=3).std()
+        ).fillna(1.0)
+        df["_arr_z"] = (arrivals - arr_mean) / (arr_std + 1e-6)
+
+        scarcity_mask = (df["_price_z"] > price_z_threshold) & (df["_arr_z"] < arrival_z_threshold)
+        flagged = df[scarcity_mask]
+
+        for _, row in flagged.iterrows():
+            price_z = float(row["_price_z"])
+            arr_z = float(row["_arr_z"])
+            severity = float(min(1.0, (price_z - arrival_z_threshold) / 5.0))
+
+            alerts.append(
+                AnomalyAlert(
+                    observation_id=str(
+                        row.get("id", f"{row[self.date_col]}_{row[self.sku_col]}_{row[self.mandi_col]}")
+                    ),
+                    sku_name=str(row[self.sku_col]),
+                    region=str(row.get(self.region_col, "")),
+                    vendor_or_mandi=str(row[self.mandi_col]),
+                    observed_price=float(row[self.price_col]),
+                    anomaly_type="ARTIFICIAL_SCARCITY",
+                    severity_score=round(severity, 4),
+                    details={
+                        "price_z_score": round(price_z, 3),
+                        "arrival_z_score": round(arr_z, 3),
+                        "arrival_quantity_tonnes": float(row.get(self.arrival_col, 0)),
+                        "observation_date": str(row[self.date_col])[:10],
+                        "interpretation": (
+                            f"Price spiked {price_z:.2f}σ above 14d mean while "
+                            f"arrivals collapsed {abs(arr_z):.2f}σ below 14d mean — "
+                            "indicative of deliberate supply withholding."
+                        ),
+                    },
+                )
+            )
+
+        logger.info(
+            "detect_artificial_scarcity: %d hoarding alert(s) generated.", len(alerts)
+        )
+        return alerts
+
+    # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
@@ -451,7 +549,29 @@ def detect_anomalies(
     logger.info("Cartel-behavior flags: %d", len(cartel_alerts))
 
     # ------------------------------------------------------------------
-    # 5.  Write JSON report
+    # 5.  Detect artificial scarcity / hoarding cross-signal (Slide 14)
+    # ------------------------------------------------------------------
+    scarcity_alerts = detector.detect_artificial_scarcity(df)
+
+    for alert in scarcity_alerts:
+        anomaly_records.append(
+            {
+                "observation_id": alert.observation_id,
+                "date": alert.details.get("observation_date", ""),
+                "sku_name": alert.sku_name,
+                "state": alert.region,
+                "market_mandi": alert.vendor_or_mandi,
+                "observed_price": alert.observed_price,
+                "anomaly_type": "ARTIFICIAL_SCARCITY",
+                "severity_score": round(alert.severity_score, 4),
+                "details": alert.details,
+            }
+        )
+
+    logger.info("Artificial-scarcity alerts: %d", len(scarcity_alerts))
+
+    # ------------------------------------------------------------------
+    # 6.  Write JSON report
     # ------------------------------------------------------------------
     os.makedirs(os.path.dirname(report_save_path) or ".", exist_ok=True)
     with open(report_save_path, "w", encoding="utf-8") as fh:

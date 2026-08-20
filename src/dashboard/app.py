@@ -280,11 +280,197 @@ st.title("⚖️ CASPER-Gov Live Regulatory Pricing Monitor")
 st.subheader("Price Band Estimation & statutory ceiling compliance alerts")
 
 # Tabs
-tab_audit, tab_scenario, tab_upload = st.tabs([
+tab_mandi, tab_audit, tab_scenario, tab_upload = st.tabs([
+    "🏪 Mandi+ Live Cards",
     "📋 Live Audit Monitor", 
     "⚡ Scenario Planning & Risk Forecasting",
     "📤 Batch Risk Uploader"
 ])
+
+# ─────────────────────────────────────────────────────────────
+# TAB 0: MANDI+ LIVE COMMODITY CARDS (Slides 6–9)
+# ─────────────────────────────────────────────────────────────
+with tab_mandi:
+    st.markdown("### 🏪 Mandi+ — Live Commodity Intelligence Cards")
+    st.caption("Real-time price band status, compliance badges, and hoarding risk signals per commodity")
+
+    # Sidebar filters for Mandi+ tab
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**🏪 Mandi+ Filters**")
+    all_skus = sorted(df_monitor["sku_name"].unique().tolist()) if not df_monitor.empty else []
+    all_states = sorted(df_monitor["state"].unique().tolist()) if not df_monitor.empty else []
+    mandi_sku_filter = st.sidebar.multiselect("Commodity Filter", all_skus, default=all_skus[:6] if len(all_skus) >= 6 else all_skus, key="mandi_sku")
+    mandi_state_filter = st.sidebar.selectbox("State Filter", ["All States"] + all_states, key="mandi_state")
+
+    if df_monitor.empty:
+        st.warning("No monitoring data available. Ensure models are trained and data pipeline has run.")
+    else:
+        df_cards = df_monitor.copy()
+        if mandi_sku_filter:
+            df_cards = df_cards[df_cards["sku_name"].isin(mandi_sku_filter)]
+        if mandi_state_filter != "All States":
+            df_cards = df_cards[df_cards["state"] == mandi_state_filter]
+
+        # Aggregate: one row per SKU (latest date, averaged across mandis)
+        price_col = "observed_price" if "observed_price" in df_cards.columns else "modal_price_per_quintal"
+        p50_col = "p50_mid" if "p50_mid" in df_cards.columns else "p50_midpoint"
+        p10_col = "p10_floor"
+        p90_col = "p90_ceiling"
+
+        df_agg = (
+            df_cards.groupby("sku_name").agg(
+                observed_price=(price_col, "mean"),
+                p10_floor=(p10_col, "mean"),
+                p50_mid=(p50_col, "mean"),
+                p90_ceiling=(p90_col, "mean"),
+                num_mandis=("market_mandi", "nunique"),
+                num_breaches=("compliance_status", lambda x: (x == "CEILING_BREACHED").sum()),
+                state=("state", "first"),
+            ).reset_index()
+        )
+
+        # Summary metrics strip
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        total_skus = len(df_agg)
+        breach_skus = len(df_agg[df_agg["num_breaches"] > 0])
+        total_mandis_card = int(df_agg["num_mandis"].sum())
+        avg_compliance = round((1 - breach_skus / max(total_skus, 1)) * 100, 1)
+        with mc1:
+            st.metric("Commodities Monitored", total_skus)
+        with mc2:
+            st.metric("Commodities with Breaches", breach_skus, delta=f"{breach_skus} alerts", delta_color="inverse")
+        with mc3:
+            st.metric("Total Mandis", total_mandis_card)
+        with mc4:
+            st.metric("Overall Compliance", f"{avg_compliance}%")
+
+        st.write("---")
+
+        # Commodity cards — 3 per row
+        CARDS_PER_ROW = 3
+        skus = df_agg["sku_name"].tolist()
+        for row_start in range(0, len(skus), CARDS_PER_ROW):
+            row_skus = skus[row_start: row_start + CARDS_PER_ROW]
+            cols = st.columns(CARDS_PER_ROW)
+            for col_idx, sku in enumerate(row_skus):
+                row = df_agg[df_agg["sku_name"] == sku].iloc[0]
+                observed = float(row["observed_price"])
+                p10 = float(row["p10_floor"])
+                p50 = float(row["p50_mid"])
+                p90 = float(row["p90_ceiling"])
+                n_mandis = int(row["num_mandis"])
+                n_breaches = int(row["num_breaches"])
+
+                # Status classification
+                if observed > p90:
+                    status_color = "#ef4444"
+                    status_label = "🔴 CEILING BREACHED"
+                    badge_bg = "#7f1d1d"
+                    badge_fg = "#fecaca"
+                elif observed > p50:
+                    status_color = "#f59e0b"
+                    status_label = "🟡 ELEVATED PRICE"
+                    badge_bg = "#78350f"
+                    badge_fg = "#fef3c7"
+                else:
+                    status_color = "#10b981"
+                    status_label = "🟢 COMPLIANT"
+                    badge_bg = "#064e3b"
+                    badge_fg = "#d1fae5"
+
+                # Hoarding risk: proxied from supply shock (if available) or breach ratio
+                hoarding_pct = min(100, int(n_breaches / max(n_mandis, 1) * 100))
+                if hoarding_pct >= 50:
+                    hoard_chip = "🚨 High Hoarding Risk"
+                    hoard_color = "#ef4444"
+                elif hoarding_pct >= 20:
+                    hoard_chip = "⚠️ Moderate Risk"
+                    hoard_color = "#f59e0b"
+                else:
+                    hoard_chip = "✅ Low Risk"
+                    hoard_color = "#10b981"
+
+                # Gauge fill percent (0–100%) relative to band
+                band_range = max(p90 - p10, 1.0)
+                gauge_pct = min(100, max(0, int((observed - p10) / band_range * 100)))
+
+                with cols[col_idx]:
+                    st.markdown(f"""
+<div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid {status_color}44;
+            border-radius: 16px; padding: 20px; margin-bottom: 12px;
+            box-shadow: 0 4px 24px {status_color}22;">
+
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+    <div>
+      <h3 style="margin:0; font-size:1.2rem; color:#f1f5f9; font-family:Inter,sans-serif;">
+        🌾 {sku}
+      </h3>
+      <p style="margin:2px 0 0; font-size:0.75rem; color:#94a3b8;">{row['state']} · {n_mandis} Mandis</p>
+    </div>
+    <span style="background:{badge_bg}; color:{badge_fg}; font-size:0.65rem;
+                 font-weight:700; padding:4px 10px; border-radius:999px; white-space:nowrap;">
+      {status_label}
+    </span>
+  </div>
+
+  <!-- Observed price -->
+  <div style="text-align:center; margin-bottom:14px;">
+    <div style="font-size:2rem; font-weight:800; color:{status_color}; font-family:Inter,sans-serif;">
+      ₹{observed:,.0f}
+    </div>
+    <div style="font-size:0.72rem; color:#64748b;">Observed Avg Price (INR/Qtl)</div>
+  </div>
+
+  <!-- Price band gauge bar -->
+  <div style="margin-bottom:14px;">
+    <div style="display:flex; justify-content:space-between; font-size:0.68rem; color:#94a3b8; margin-bottom:4px;">
+      <span>Floor ₹{p10:,.0f}</span><span>Fair ₹{p50:,.0f}</span><span>Ceiling ₹{p90:,.0f}</span>
+    </div>
+    <div style="background:#334155; border-radius:999px; height:8px; position:relative; overflow:hidden;">
+      <div style="background:linear-gradient(90deg,#10b981,#f59e0b,#ef4444);
+                  width:100%; height:100%; position:absolute; opacity:0.3; border-radius:999px;"></div>
+      <div style="background:{status_color}; height:100%; width:6px; position:absolute;
+                  left:{gauge_pct}%; transform:translateX(-50%); border-radius:999px;
+                  box-shadow: 0 0 6px {status_color};"></div>
+    </div>
+  </div>
+
+  <!-- Hoarding risk chip -->
+  <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.75rem;">
+    <span style="color:{hoard_color}; font-weight:600;">{hoard_chip}</span>
+    <span style="color:#64748b;">{n_breaches}/{n_mandis} mandis breached</span>
+  </div>
+
+</div>
+""", unsafe_allow_html=True)
+
+                    # 7-stage price estimate button
+                    if st.button(f"🔍 Deep Estimate", key=f"btn_estimate_{sku}_{col_idx}_{row_start}"):
+                        with st.spinner(f"Running 7-stage pipeline for {sku}..."):
+                            try:
+                                res = requests.post(
+                                    f"http://{API_HOST}:8000/api/v1/price-estimate",
+                                    json={"sku_name": sku, "state": row["state"]},
+                                    timeout=15,
+                                )
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    stage7 = data["stages"]["stage_7_final"]
+                                    critic = data["stages"]["stage_6_critic"]
+                                    shap_d = data["stages"]["stage_4_shap_drivers"]
+                                    st.success(f"**Critic Decision:** {critic['decision']}  |  **Risk:** {stage7['risk_level']}")
+                                    st.json({
+                                        "final_p10": stage7["p10_floor"],
+                                        "final_p50": stage7["p50_midpoint"],
+                                        "final_p90": stage7["p90_ceiling"],
+                                        "compliance": stage7["compliance_status"],
+                                        "top_driver": shap_d[0]["feature"] if shap_d else "N/A",
+                                    })
+                                else:
+                                    st.error(f"API Error {res.status_code}")
+                            except Exception as ex:
+                                st.warning(f"API offline — direct model fallback: {str(ex)[:80]}")
 
 # --- TAB 1: AUDIT MONITOR ---
 with tab_audit:

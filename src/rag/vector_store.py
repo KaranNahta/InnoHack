@@ -93,10 +93,13 @@ STATUTORY_PRECEDENTS = [
 
 
 def _get_embedding_function():
-    """Initializes and returns sentence-transformers embedding function."""
-    return embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL_NAME
-    )
+    """Initializes and returns embedding function."""
+    try:
+        return embedding_functions.DefaultEmbeddingFunction()
+    except Exception:
+        return embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL_NAME
+        )
 
 
 def populate_database(db_path: str = DEFAULT_DB_PATH) -> None:
