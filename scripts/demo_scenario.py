@@ -101,25 +101,36 @@ def scenario_a():
         if r.status_code == 200:
             d = r.json()
             ok(f"Pipeline completed in {latency_ms:.1f} ms")
-            ok(f"Conformal Bands  →  p10: ₹{d.get('p10', '?'):.0f}  |  "
-               f"p50: ₹{d.get('p50', '?'):.0f}  |  "
-               f"p90: ₹{d.get('p90', '?'):.0f}")
-            verdict = d.get("compliance_status", d.get("verdict", "?"))
-            anomaly = d.get("anomaly_detected", False)
-            if anomaly or "BREACH" in str(verdict).upper() or "ALERT" in str(verdict).upper():
-                warn(f"Compliance verdict: {R}{verdict}{RST}")
-                warn("Price EXCEEDS statutory p90 ceiling → Enforcement triggered!")
+            
+            # Unpack nested 7-stage output or top-level keys
+            final_stage = d.get("stages", {}).get("stage_7_final", {})
+            p10 = final_stage.get("p10_floor", d.get("p10", 0.0))
+            p50 = final_stage.get("p50_midpoint", d.get("p50", 0.0))
+            p90 = final_stage.get("p90_ceiling", d.get("p90", 0.0))
+            verdict = final_stage.get("compliance_status", d.get("compliance_status", d.get("verdict", "UNKNOWN")))
+            risk = final_stage.get("risk_level", "NORMAL")
+
+            ok(f"Conformal Bands  →  p10: ₹{float(p10):.0f}  |  "
+               f"p50: ₹{float(p50):.0f}  |  "
+               f"p90: ₹{float(p90):.0f}")
+            
+            if "BREACH" in str(verdict).upper() or "ELEVATED" in str(verdict).upper():
+                warn(f"Compliance verdict: {R}{verdict}{RST} (Risk: {risk})")
+                warn("Price EXCEEDS statutory threshold → Enforcement triggered!")
             else:
-                ok(f"Compliance verdict: {verdict}")
-            drivers = d.get("shap_drivers", d.get("cost_drivers", []))
+                ok(f"Compliance verdict: {verdict} (Risk: {risk})")
+            
+            drivers = d.get("stages", {}).get("stage_4_shap_drivers", d.get("shap_drivers", []))
             if drivers:
                 section("Top SHAP cost drivers:")
                 for drv in drivers[:5]:
                     info(str(drv))
-            notice = d.get("llm_notice", d.get("enforcement_notice", ""))
+            
+            critic = d.get("stages", {}).get("stage_6_critic", {})
+            notice = critic.get("reasoning", d.get("llm_notice", ""))
             if notice:
-                section("LLM-generated enforcement notice (excerpt):")
-                for line in str(notice).strip().splitlines()[:6]:
+                section("LLM Critic Precedent / Reasoning:")
+                for line in str(notice).strip().splitlines()[:4]:
                     info(line)
         else:
             warn(f"API returned {r.status_code}: {r.text[:200]}")
@@ -234,17 +245,27 @@ def scenario_c():
         if r.status_code == 200:
             d = r.json()
             ok(f"Pipeline completed in {latency_ms:.1f} ms")
-            ok(f"Conformal Bands  →  p10: ₹{d.get('p10', '?'):.0f}  |  "
-               f"p50: ₹{d.get('p50', '?'):.0f}  |  "
-               f"p90: ₹{d.get('p90', '?'):.0f}")
-            drivers = d.get("shap_drivers", d.get("cost_drivers", []))
+            final_stage = d.get("stages", {}).get("stage_7_final", {})
+            p10 = final_stage.get("p10_floor", d.get("p10", 0.0))
+            p50 = final_stage.get("p50_midpoint", d.get("p50", 0.0))
+            p90 = final_stage.get("p90_ceiling", d.get("p90", 0.0))
+            verdict = final_stage.get("compliance_status", d.get("compliance_status", d.get("verdict", "UNKNOWN")))
+            risk = final_stage.get("risk_level", "NORMAL")
+
+            ok(f"Conformal Bands  →  p10: ₹{float(p10):.0f}  |  "
+               f"p50: ₹{float(p50):.0f}  |  "
+               f"p90: ₹{float(p90):.0f}")
+            
+            drivers = d.get("stages", {}).get("stage_4_shap_drivers", d.get("shap_drivers", []))
             section("SHAP attribution — root-cause of price inflation:")
             if drivers:
                 for drv in drivers[:5]:
                     info(str(drv))
             else:
                 info("(SHAP drivers embedded in LLM notice)")
-            notice = d.get("llm_notice", d.get("enforcement_notice", ""))
+            
+            critic = d.get("stages", {}).get("stage_6_critic", {})
+            notice = critic.get("reasoning", d.get("llm_notice", ""))
             if notice:
                 section("Policy recommendation (LLM critic):")
                 for line in str(notice).strip().splitlines()[:6]:
