@@ -33,7 +33,9 @@ def read_root():
         "documentation": "/docs",
         "endpoints": {
             "price_bands": "/api/v1/price-bands?sku_name=Tomato&state=Uttar Pradesh",
-            "monitoring": "/api/v1/monitoring"
+            "monitoring": "/api/v1/monitoring",
+            "anomalies": "/api/v1/anomalies",
+            "risk_analysis": "/api/v1/risk-analysis"
         }
     }
 
@@ -378,3 +380,86 @@ async def analyze_batch_risk(file: UploadFile = File(...)):
         })
         
     return analyzed_records
+
+
+@app.get("/api/v1/anomalies")
+def get_anomalies(
+    sku_name: Optional[str] = Query(None, description="Filter anomalies by SKU/Commodity name"),
+    state: Optional[str] = Query(None, description="Filter anomalies by state/region"),
+    anomaly_type: Optional[str] = Query(None, description="Filter by PRICE_GOUGING or CARTEL_SPIKE"),
+    contamination: float = Query(0.05, ge=0.01, le=0.5, description="Contamination factor for IsolationForest"),
+    cartel_std_threshold: float = Query(2.5, ge=1.0, le=5.0, description="Z-score threshold for cartel spikes"),
+    min_vendors: int = Query(3, ge=2, le=10, description="Minimum synchronized vendors for cartel detection")
+):
+    """
+    Detects price gouging and cartel anomalies across active mandi observations.
+    Leverages the CASPER-Gov AnomalyDetector engine.
+    """
+    if not os.path.exists(TEST_FEAT_PATH):
+        raise HTTPException(status_code=500, detail="Test features dataset not found.")
+
+    try:
+        from src.models.anomaly_detector import AnomalyDetector
+        
+        df = pd.read_parquet(TEST_FEAT_PATH)
+        if df.empty:
+            return []
+
+        detector = AnomalyDetector(contamination=contamination)
+        
+        # 1. Price gouging detection
+        df_gouging = detector.detect_price_gouging(df)
+        
+        # 2. Cartel spike detection
+        cartel_alerts = detector.detect_cartel_spikes(
+            df, 
+            std_threshold=cartel_std_threshold, 
+            min_vendors=min_vendors
+        )
+        
+        results = []
+        
+        # Collect gouging anomalies
+        gouging_rows = df_gouging[df_gouging["is_gouging"]].copy()
+        for _, row in gouging_rows.iterrows():
+            results.append({
+                "observation_id": str(row.get("id", f"{row['observation_date']}_{row['sku_name']}_{row['market_mandi']}")),
+                "date": pd.Timestamp(row["observation_date"]).strftime("%Y-%m-%d"),
+                "sku_name": row["sku_name"],
+                "state": row.get("state", ""),
+                "market_mandi": row["market_mandi"],
+                "observed_price": float(row["modal_price_per_quintal"]),
+                "anomaly_type": "PRICE_GOUGING",
+                "severity_score": round(float(row["gouging_severity"]), 4),
+                "details": {
+                    "anomaly_raw_score": round(float(row["anomaly_raw_score"]), 6),
+                }
+            })
+            
+        # Collect cartel spike anomalies
+        for alert in cartel_alerts:
+            results.append({
+                "observation_id": alert.observation_id,
+                "date": str(alert.details.get("observation_date", ""))[:10],
+                "sku_name": alert.sku_name,
+                "state": alert.region,
+                "market_mandi": alert.vendor_or_mandi,
+                "observed_price": alert.observed_price,
+                "anomaly_type": alert.anomaly_type,
+                "severity_score": round(alert.severity_score, 4),
+                "details": alert.details
+            })
+
+        # Apply optional query filters
+        if sku_name:
+            results = [r for r in results if r["sku_name"].lower() == sku_name.lower()]
+        if state:
+            results = [r for r in results if r["state"].lower() == state.lower()]
+        if anomaly_type:
+            results = [r for r in results if r["anomaly_type"].lower() == anomaly_type.lower()]
+
+        return results
+    except Exception as e:
+        logger.error("Anomaly detection endpoint error: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Anomaly detection failed: {str(e)}")
+
