@@ -320,7 +320,7 @@ with tab_audit:
     st.markdown("### 📋 Active Market Pricing Audit Table")
 
     def highlight_breaches(row):
-        status = row["compliance_status"]
+        status = row["Compliance Status"]
         if status == "CEILING_BREACHED":
             return ["background-color: #7f1d1d; color: #fecaca; font-weight: bold"] * len(row)
         else:
