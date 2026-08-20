@@ -5,6 +5,9 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import logging
+import time
+
+_START_TIME = time.time()
 import joblib
 import pandas as pd
 import numpy as np
@@ -60,6 +63,34 @@ def read_root():
             "risk_analysis": "/api/v1/risk-analysis",
             "enforce": "POST /api/v1/enforce  ← LLM court-ready enforcement notice",
         }
+    }
+
+@app.get("/health", tags=["System"])
+@app.get("/api/v1/health", tags=["System"])
+def health_check():
+    """
+    Platform liveness probe. Returns model load status and uptime.
+    Useful for Docker health checks and judge verification.
+    """
+    loaded = [k for k in models]
+    return {
+        "status": "ok",
+        "platform": "CASPER-Gov v1.0",
+        "models_loaded": len(loaded) > 0,
+        "loaded_models": loaded,
+        "uptime_seconds": round(time.time() - _START_TIME, 1),
+        "endpoints": [
+            "POST /api/v1/price-estimate",
+            "GET  /api/v1/price-bands",
+            "GET  /api/v1/monitoring",
+            "GET  /api/v1/anomalies",
+            "POST /api/v1/enforce",
+            "POST /api/v1/enforce/pdf",
+            "POST /api/v1/risk-analysis",
+            "GET  /api/v1/audit/logs",
+            "GET  /api/v1/audit/verify",
+        ],
+        "docs": "http://localhost:8000/docs",
     }
 
 # Paths
