@@ -36,12 +36,19 @@ def build_cartel_network_figure(
     if df_sku.empty:
         df_sku = df
 
+    # Find appropriate price column
+    price_col = None
+    for candidate in ["modal_price_per_quintal", "observed_price", "modal_price", "price"]:
+        if candidate in df_sku.columns:
+            price_col = candidate
+            break
+
     # Pivot to date x mandi price matrix
-    if "market_mandi" in df_sku.columns and "observation_date" in df_sku.columns:
+    if "market_mandi" in df_sku.columns and "observation_date" in df_sku.columns and price_col is not None:
         piv = df_sku.pivot_table(
             index="observation_date",
             columns="market_mandi",
-            values="modal_price_per_quintal",
+            values=price_col,
             aggfunc="mean"
         ).ffill().bfill()
     else:
