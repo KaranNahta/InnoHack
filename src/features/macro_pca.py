@@ -34,26 +34,29 @@ def fit_save_macro_pca(macro_dir: str = "data/raw/macro", ref_dir: str = "data/r
     freight = pd.read_parquet(freight_path)
     bench = pd.read_parquet(bench_path)
     
-    # Standardize dates
-    cpi["observation_date"] = pd.to_datetime(cpi["observation_date"])
-    wpi["observation_date"] = pd.to_datetime(wpi["observation_date"])
-    freight["observation_date"] = pd.to_datetime(freight["observation_date"])
-    bench["observation_date"] = pd.to_datetime(bench["observation_date"])
+    # Standardize dates to monthly periods for robust multi-cadence alignment
+    for d in [cpi, wpi, freight, bench]:
+        d["observation_date"] = pd.to_datetime(d["observation_date"])
+        d["year_month"] = d["observation_date"].dt.to_period("M")
+
+    # Combine datasets on year_month
+    df = pd.merge(cpi[["year_month", "cpi_value"]].drop_duplicates("year_month"),
+                  wpi[["year_month", "wpi_value"]].drop_duplicates("year_month"),
+                  on="year_month", how="outer")
+    df = pd.merge(df, freight[["year_month", "freight_index"]].drop_duplicates("year_month"),
+                  on="year_month", how="outer")
+    df = pd.merge(df, bench[["year_month", "fao_food_price_index", "who_health_indicator", "iea_energy_index"]].drop_duplicates("year_month"),
+                  on="year_month", how="outer")
     
-    # Merge CPI and WPI
-    df = pd.merge(cpi, wpi, on="observation_date", how="inner")
-    # Merge Freight
-    df = pd.merge(df, freight, on="observation_date", how="inner")
-    # Merge Benchmarks
-    df = pd.merge(df, bench, on="observation_date", how="inner")
+    df = df.sort_values("year_month").reset_index(drop=True)
+    df = df.ffill().bfill()
     
-    if df.empty:
-        logger.error("No overlapping dates found across macro datasets.")
-        sys.exit(1)
-        
-    # Macro variables to run PCA on
     macro_cols = ["cpi_value", "wpi_value", "freight_index", "fao_food_price_index", "who_health_indicator", "iea_energy_index"]
     
+    if df.empty or df[macro_cols].dropna().empty:
+        logger.error("No valid data points found across macro datasets.")
+        sys.exit(1)
+        
     # Extract features
     X = df[macro_cols].dropna()
     

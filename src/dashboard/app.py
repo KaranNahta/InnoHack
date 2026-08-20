@@ -467,10 +467,57 @@ with tab_mandi:
                                         "compliance": stage7["compliance_status"],
                                         "top_driver": shap_d[0]["feature"] if shap_d else "N/A",
                                     })
+
+                                    # Provide instant PDF generation for non-compliant anomalies
+                                    if stage7["compliance_status"] != "WITHIN_BAND":
+                                        from src.utils.pdf_exporter import build_enforcement_pdf
+                                        notice_payload = {
+                                            "notice_id": f"ENF-{sku[:3].upper()}-{datetime.utcnow().strftime('%Y%m%d%H%M')}",
+                                            "severity_rating": stage7["risk_level"],
+                                            "sku_name": sku,
+                                            "target_entity": f"{row['state']} Wholesale Mandis",
+                                            "region": row["state"],
+                                            "observed_price": stage7["observed_price"],
+                                            "fair_price_ceiling": stage7["p90_ceiling"],
+                                            "price_deviation_pct": stage7["breach_percentage"],
+                                            "top_cost_drivers": shap_d,
+                                            "legal_citations": data["stages"]["stage_5_legal_precedents"],
+                                            "recommended_action": "Issue Statutory Price Show-Cause Notice under Section 3 ECA 1955",
+                                            "draft_notice_text": f"OFFICIAL STATUTORY NOTICE: Surveillance indicates an abnormal price deviation of +{stage7['breach_percentage']:.1f}% for {sku} in {row['state']}. Supply registers and cost audit are demanded within 48 hours."
+                                        }
+                                        pdf_bytes = build_enforcement_pdf(notice_payload)
+                                        st.download_button(
+                                            label="📄 Download Official Court-Ready Notice (PDF)",
+                                            data=pdf_bytes,
+                                            file_name=f"statutory_enforcement_notice_{sku}_{datetime.utcnow().strftime('%Y%m%d')}.pdf",
+                                            mime="application/pdf",
+                                            key=f"dl_pdf_{sku}_{col_idx}_{row_start}"
+                                        )
                                 else:
                                     st.error(f"API Error {res.status_code}")
                             except Exception as ex:
                                 st.warning(f"API offline — direct model fallback: {str(ex)[:80]}")
+
+        # -------------------------------------------------------------
+        # Inter-Mandi Cartel Collusion Network Visualizer (Slide 14)
+        # -------------------------------------------------------------
+        st.write("---")
+        st.markdown("### 🕸️ Inter-Mandi Price Collusion & Cartel Network Analysis")
+        st.markdown("Visualizes synchronized vendor/mandi pricing spikes. Connected red clusters identify syndicates engaging in non-competitive pricing collusion exceeding competition thresholds ($r > 0.75$).")
+
+        from src.dashboard.components.cartel_graph import build_cartel_network_figure
+        c_col1, c_col2 = st.columns([3, 2])
+        with c_col1:
+            cartel_sku = st.selectbox("Select Commodity for Cartel Topology Analysis", all_skus, key="cartel_sku_select")
+            cartel_fig, cartel_cliques = build_cartel_network_figure(df_monitor, selected_sku=cartel_sku)
+            st.plotly_chart(cartel_fig, use_container_width=True)
+        with c_col2:
+            st.markdown(f"#### 🚨 Detected Collusion Syndicates ({len(cartel_cliques)} Links)")
+            if cartel_cliques:
+                st.dataframe(pd.DataFrame(cartel_cliques), use_container_width=True)
+                st.warning(f"⚠️ **Antitrust Alert:** {len(cartel_cliques)} mandi pairs exhibit statistically anomalous price synchronization under Section 3(3)(a) Competition Act 2002.")
+            else:
+                st.success("✅ **Competitive Pricing:** No abnormal inter-mandi price synchronization detected.")
 
 # --- TAB 1: AUDIT MONITOR ---
 with tab_audit:
@@ -548,6 +595,36 @@ with tab_audit:
         )
     else:
         st.warning("No records match the current filter configuration.")
+
+    # -------------------------------------------------------------
+    # Cryptographic Audit Chain Integrity Verification (Slide 15)
+    # -------------------------------------------------------------
+    st.write("---")
+    st.markdown("### 🔐 Cryptographic Audit Chain & Tamper-Evident Ledger (Slide 15)")
+    st.markdown("Every regulatory price estimation, anomaly alert, and enforcement action is cryptographically sealed using SHA-256 block-chaining (`hash_n = SHA256(hash_{n-1} + timestamp + payload)`).")
+
+    from src.audit.logger import verify_audit_trail, get_audit_logs
+    audit_res = verify_audit_trail()
+    recent_logs = get_audit_logs(limit=10)
+
+    ac1, ac2, ac3 = st.columns(3)
+    with ac1:
+        if audit_res.get("chain_valid"):
+            st.metric("Blockchain Verification", "VALID & INTACT", delta="Zero Tampering")
+        else:
+            st.metric("Blockchain Verification", "TAMPER DETECTED", delta="Integrity Compromised", delta_color="inverse")
+    with ac2:
+        st.metric("Total Cryptographic Blocks", str(audit_res.get("total_records", 0)))
+    with ac3:
+        latest_root = str(audit_res.get("latest_root_hash", "0000..."))[:16] + "..."
+        st.metric("Latest Merkle Root Hash", latest_root)
+
+    with st.expander("📜 View Cryptographic Audit Log Entries (Latest 10 Blocks)", expanded=False):
+        if recent_logs:
+            df_logs = pd.DataFrame(recent_logs)[["id", "timestamp", "sku_id", "region", "anomaly_type", "observed_price", "prev_hash", "entry_hash"]]
+            st.dataframe(df_logs, use_container_width=True)
+        else:
+            st.info("No audit entries recorded yet. Generate an enforcement notice or run predictions to append blocks.")
 
 # --- TAB 2: SCENARIO PLANNING ---
 with tab_scenario:

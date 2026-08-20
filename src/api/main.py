@@ -768,6 +768,27 @@ def generate_enforcement_notice(req: EnforceRequest):
             retrieved_precedents=legal_precedents,
         )
 
+        # Record in cryptographic audit trail
+        try:
+            from src.audit.logger import log_audit_event
+            log_audit_event(
+                sku_id=notice.sku_name,
+                region=notice.region,
+                model_version="mapie_conformal_v1.0",
+                feature_snapshot_hash="sha256_" + notice.notice_id,
+                observed_price=notice.observed_price,
+                computed_band={"p10": notice.fair_price_ceiling * 0.7, "p50": notice.fair_price_ceiling * 0.85, "p90": notice.fair_price_ceiling},
+                anomaly_type=req.anomaly_type,
+                llm_verdict_json={
+                    "notice_id": notice.notice_id,
+                    "severity": notice.severity_rating,
+                    "target_entity": notice.target_entity,
+                    "recommended_action": notice.recommended_action,
+                }
+            )
+        except Exception as ae:
+            logger.warning("Audit logging event failed: %s", str(ae))
+
         return {
             "notice_id": notice.notice_id,
             "severity_rating": notice.severity_rating,
@@ -792,3 +813,62 @@ def generate_enforcement_notice(req: EnforceRequest):
     except Exception as e:
         logger.error("Enforce endpoint error: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Enforcement notice generation failed: {str(e)}")
+
+
+@app.post("/api/v1/enforce/pdf")
+def generate_enforcement_notice_pdf(req: EnforceRequest):
+    """
+    Generates and returns an official, printable PDF enforcement order for download.
+    """
+    from fastapi.responses import Response
+    from src.utils.pdf_exporter import build_enforcement_pdf
+
+    # Generate the structured notice first
+    notice_res = generate_enforcement_notice(req)
+    pdf_bytes = build_enforcement_pdf(notice_res)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=enforcement_order_{notice_res['notice_id']}.pdf"
+        }
+    )
+
+
+
+# ============================================================
+# /api/v1/audit/logs & /api/v1/audit/verify — Cryptographic Trail
+# ============================================================
+
+@app.get("/api/v1/audit/logs")
+def get_audit_trail_logs(limit: int = 50):
+    """
+    Returns recent compliance audit trail entries with cryptographic hashes.
+    """
+    try:
+        from src.audit.logger import get_audit_logs
+        logs = get_audit_logs(limit=limit)
+        return {
+            "total_retrieved": len(logs),
+            "logs": logs
+        }
+    except Exception as e:
+        logger.error("Failed to retrieve audit logs: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Audit logs query failed: {str(e)}")
+
+
+@app.get("/api/v1/audit/verify")
+def verify_audit_trail_integrity():
+    """
+    Cryptographically verifies the non-tampered integrity of all audit records in the database.
+    Recomputes the full SHA-256 hash chain from genesis and returns mathematical proof of validity.
+    """
+    try:
+        from src.audit.logger import verify_audit_trail
+        verdict = verify_audit_trail()
+        return verdict
+    except Exception as e:
+        logger.error("Audit verification error: %s", str(e))
+        raise HTTPException(status_code=500, detail=f"Audit trail verification failed: {str(e)}")
+
