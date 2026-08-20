@@ -167,6 +167,7 @@ def get_price_bands(sku_name: str = Query(..., description="SKU/Commodity name")
     # Get latest date's records to represent active pricing
     latest_date = df_filtered["observation_date"].max()
     df_latest = df_filtered[df_filtered["observation_date"] == latest_date].copy()
+    df_latest = df_latest.drop_duplicates(subset=["market_mandi", "sku_variety"])
     
     # Merge clusters mapping
     if df_clusters is not None:
@@ -225,6 +226,7 @@ def get_monitoring_data():
     # Sort and pick latest date to represent live monitoring view
     latest_date = df["observation_date"].max()
     df_live = df[df["observation_date"] == latest_date].copy()
+    df_live = df_live.drop_duplicates(subset=["sku_name", "state", "market_mandi", "sku_variety"])
     
     # Merge cluster ID mappings
     if df_clusters is not None:
