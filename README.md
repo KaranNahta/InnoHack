@@ -81,13 +81,31 @@ CASPER-Gov is a modern, AI-powered regulatory intelligence and compliance auditi
 
 ## ⚡ Execution Commands
 
-### 1. Launch FastAPI Backend
+### 🐋 Run with Docker (Recommended)
+Orchestrate and execute the entire platform in isolated containers using Docker Compose:
+
+1. **Build and Boot Services**:
+   ```bash
+   docker-compose up --build -d
+   ```
+   *This automatically builds the images and starts the FastAPI backend (port `8000`) and the Streamlit dashboard (port `8501`) with persistent local directory volume mounts.*
+
+2. **Stop Services**:
+   ```bash
+   docker-compose down
+   ```
+
+---
+
+### 🐍 Run Locally (Alternative)
+
+#### 1. Launch FastAPI Backend
 Exposes `/api/v1/price-bands`, `/api/v1/monitoring`, and `/api/v1/risk-analysis` (POST) REST endpoints:
 ```bash
 uvicorn src.api.main:app --host 127.0.0.1 --port 8000
 ```
 
-### 2. Launch Streamlit Auditing Dashboard
+#### 2. Launch Streamlit Auditing Dashboard
 Includes the Live Audit Monitor, the Scenario Planning forecasting simulator, and the Batch Risk CSV Uploader tab:
 ```bash
 streamlit run src/dashboard/app.py --server.port 8501

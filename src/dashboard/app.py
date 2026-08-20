@@ -51,8 +51,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # API and File Paths
-API_MONITORING_URL = "http://127.0.0.1:8000/api/v1/monitoring"
-API_RISK_URL = "http://127.0.0.1:8000/api/v1/risk-analysis"
+API_HOST = os.getenv("API_HOST", "127.0.0.1")
+API_MONITORING_URL = f"http://{API_HOST}:8000/api/v1/monitoring"
+API_RISK_URL = f"http://{API_HOST}:8000/api/v1/risk-analysis"
 TEST_FEAT_PATH = "data/features/test_features.parquet"
 VENDORS_PATH = "data/raw/vendor_registry.parquet"
 CLUSTERS_PATH = "data/features/commodity_clusters.parquet"
