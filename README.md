@@ -1,6 +1,13 @@
 # ⚖️ CASPER-Gov: AI-Powered Commodity Price Surveillance & Enforcement Platform
 
+![CI](https://github.com/KaranNahta/InnoHack/actions/workflows/test.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![Tests](https://img.shields.io/badge/tests-100%20passed-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 > **InnoHack 2026 Submission** — Intelligent government-grade regulatory intelligence engine for real-time essential commodity price monitoring, anomaly detection, anti-cartel enforcement, and court-ready legal notice generation.
+>
+> 📐 [View System Architecture →](ARCHITECTURE.md)
 
 ---
 

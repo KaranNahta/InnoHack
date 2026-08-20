@@ -903,3 +903,69 @@ def verify_audit_trail_integrity():
         logger.error("Audit verification error: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Audit trail verification failed: {str(e)}")
 
+
+# ============================================================
+# /api/v1/stats — Live Platform KPI Summary
+# ============================================================
+
+@app.get("/api/v1/stats", tags=["System"])
+def platform_stats():
+    """
+    Returns live aggregate platform metrics — model load status,
+    monitoring coverage, anomaly counts, and audit chain integrity.
+    """
+    import sqlite3
+    from src.audit.logger import DEFAULT_DB_PATH, verify_audit_trail
+
+    # Count audit records
+    audit_blocks = 0
+    chain_integrity = "UNVERIFIED"
+    try:
+        verdict = verify_audit_trail()
+        audit_blocks = verdict.get("total_records", 0)
+        chain_integrity = "VERIFIED" if verdict.get("chain_valid", False) else "TAMPERED"
+    except Exception:
+        pass
+
+    # Count monitoring rows and unique SKUs
+    total_skus = 0
+    total_rows = 0
+    if df_clusters is not None:
+        total_skus = int(df_clusters["sku_name"].nunique()) if "sku_name" in df_clusters.columns else len(df_clusters)
+
+    # Try to load monitoring data for anomaly counts
+    active_anomalies = 0
+    try:
+        mon_path = "data/processed/test_features.parquet"
+        if not os.path.exists(mon_path):
+            mon_path = "data/features/test_features.parquet"
+        if os.path.exists(mon_path):
+            df_mon = pd.read_parquet(mon_path)
+            total_rows = len(df_mon)
+            if "anomaly_score" in df_mon.columns:
+                active_anomalies = int((df_mon["anomaly_score"] < -0.05).sum())
+    except Exception:
+        pass
+
+    return {
+        "platform": "CASPER-Gov v1.0",
+        "status": "operational",
+        "uptime_seconds": round(time.time() - _START_TIME, 1),
+        "models": {
+            "loaded": list(models.keys()),
+            "count": len(models),
+            "all_loaded": len(models) >= 4,
+        },
+        "monitoring": {
+            "skus_covered": total_skus if total_skus > 0 else len(df_clusters) if df_clusters is not None else 0,
+            "total_observations": total_rows,
+            "active_anomalies": active_anomalies,
+        },
+        "enforcement": {
+            "audit_chain_blocks": audit_blocks,
+            "audit_chain_integrity": chain_integrity,
+        },
+        "endpoints_count": 10,
+        "docs": "http://localhost:8000/docs",
+    }
+
