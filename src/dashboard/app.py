@@ -10,7 +10,12 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
-import plotly.graph_objects as go
+try:
+    import plotly.graph_objects as go
+    HAS_PLOTLY = True
+except ImportError:
+    go = None
+    HAS_PLOTLY = False
 
 from src.models.chronos_forecaster import forecast_price_trajectories, compute_projected_breach_risk
 
@@ -510,7 +515,10 @@ with tab_mandi:
         with c_col1:
             cartel_sku = st.selectbox("Select Commodity for Cartel Topology Analysis", all_skus, key="cartel_sku_select")
             cartel_fig, cartel_cliques = build_cartel_network_figure(df_monitor, selected_sku=cartel_sku)
-            st.plotly_chart(cartel_fig, use_container_width=True)
+            if cartel_fig is not None:
+                st.plotly_chart(cartel_fig, use_container_width=True)
+            else:
+                st.info("📊 Graph visualization requires `plotly` (`pip install plotly`).")
         with c_col2:
             st.markdown(f"#### 🚨 Detected Collusion Syndicates ({len(cartel_cliques)} Links)")
             if cartel_cliques:

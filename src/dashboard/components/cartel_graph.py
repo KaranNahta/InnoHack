@@ -12,14 +12,17 @@ import os
 from typing import Tuple, Dict, Any, List
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
+try:
+    import plotly.graph_objects as go
+except ImportError:
+    go = None
 
 
 def build_cartel_network_figure(
     df_mandi: pd.DataFrame,
     selected_sku: str = "Tomato",
     corr_threshold: float = 0.75,
-) -> Tuple[go.Figure, List[Dict[str, Any]]]:
+) -> Tuple[Any, List[Dict[str, Any]]]:
     """
     Builds an interactive Plotly network graph of mandis/vendors.
     Returns the Plotly Figure and a list of detected cartel clusters.
@@ -128,6 +131,9 @@ def build_cartel_network_figure(
             f"Synchronized Connections: {deg}<br>"
             f"Commodity: {selected_sku}"
         )
+
+    if go is None:
+        return None, cartel_clusters
 
     # Edge trace
     edge_trace = go.Scatter(
