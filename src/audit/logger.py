@@ -136,17 +136,23 @@ def log_audit_event(
     finally:
         conn.close()
         
-    logger.info(
-        "compliance_audit_event",
-        timestamp=timestamp,
-        sku_id=sku_id,
-        region=region,
-        model_version=model_version,
-        entry_hash=entry_hash,
-        prev_hash=prev_hash,
-        observed_price=observed_price,
-        anomaly_type=anomaly_type,
-    )
+    try:
+        logger.info(
+            "compliance_audit_event",
+            timestamp=timestamp,
+            sku_id=sku_id,
+            region=region,
+            model_version=model_version,
+            entry_hash=entry_hash,
+            prev_hash=prev_hash,
+            observed_price=observed_price,
+            anomaly_type=anomaly_type,
+        )
+    except TypeError:
+        logger.info(
+            "compliance_audit_event: sku=%s region=%s entry_hash=%s prev_hash=%s observed=%.2f type=%s",
+            sku_id, region, entry_hash[:12], prev_hash[:12], observed_price, anomaly_type
+        )
     return entry_hash
 
 
