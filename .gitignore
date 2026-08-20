@@ -1,0 +1,22 @@
+# Ignore folders
+.venv
+venv
+env
+ENV
+data
+models
+__pycache__
+.pytest_cache
+.ipynb_checkpoints
+.vscode
+.idea
+build
+dist
+
+# Ignore file patterns
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+.DS_Store
+Thumbs.db
