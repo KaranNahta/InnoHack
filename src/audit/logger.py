@@ -288,6 +288,82 @@ def get_audit_logs(limit: int = 50, db_path: str = DEFAULT_DB_PATH) -> List[Dict
         conn.close()
 
 
+def simulate_audit_tampering(record_id: Optional[int] = None, db_path: str = DEFAULT_DB_PATH) -> Dict[str, Any]:
+    """
+    Simulates a malicious attack or unapproved modification on an audit record by
+    altering observed_price directly in SQLite without updating the cryptographic hash.
+    Used for live judge demonstration of tamper-detection.
+    """
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        if record_id is None:
+            cursor.execute("SELECT id, observed_price FROM audit_logs ORDER BY id DESC LIMIT 1")
+            row = cursor.fetchone()
+            if not row:
+                return {"success": False, "message": "No audit records found to tamper."}
+            target_id, orig_price = row[0], row[1]
+        else:
+            cursor.execute("SELECT id, observed_price FROM audit_logs WHERE id = ?", (record_id,))
+            row = cursor.fetchone()
+            if not row:
+                return {"success": False, "message": f"Record {record_id} not found."}
+            target_id, orig_price = row[0], row[1]
+
+        tampered_price = round(float(orig_price) * 1.85, 2)
+        cursor.execute("UPDATE audit_logs SET observed_price = ? WHERE id = ?", (tampered_price, target_id))
+        conn.commit()
+        logger.warning("Simulated tampering on record %d: price changed from %.2f to %.2f", target_id, orig_price, tampered_price)
+        return {
+            "success": True,
+            "tampered_record_id": target_id,
+            "original_price": orig_price,
+            "tampered_price": tampered_price,
+            "message": f"Record #{target_id} price altered maliciously to ₹{tampered_price}. Hash chain is now compromised."
+        }
+    finally:
+        conn.close()
+
+
+def repair_tampered_audit_trail(db_path: str = DEFAULT_DB_PATH) -> Dict[str, Any]:
+    """
+    Recalculates all entry hashes sequentially from genesis to repair a simulated tamper.
+    """
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, timestamp, sku_id, region, model_version, feature_snapshot_hash,
+                   observed_price, computed_band, anomaly_type, llm_verdict_json
+            FROM audit_logs
+            ORDER BY id ASC
+        """)
+        rows = cursor.fetchall()
+        prev_h = GENESIS_HASH
+        for r in rows:
+            r_id, ts, sku, reg, m_ver, feat_h, obs_p, band_s, anom_t, verdict_s = r
+            new_hash = compute_entry_hash(
+                prev_hash=prev_h,
+                timestamp=ts,
+                sku_id=sku,
+                region=reg,
+                model_version=m_ver,
+                feature_snapshot_hash=feat_h,
+                observed_price=obs_p,
+                computed_band_str=band_s,
+                anomaly_type=anom_t,
+                llm_verdict_json_str=verdict_s
+            )
+            cursor.execute("UPDATE audit_logs SET prev_hash = ?, entry_hash = ? WHERE id = ?", (prev_h, new_hash, r_id))
+            prev_h = new_hash
+        conn.commit()
+        return {"success": True, "message": f"Repaired {len(rows)} blocks. Chain integrity restored to valid state."}
+    finally:
+        conn.close()
+
+
 def main():
     init_db()
     
