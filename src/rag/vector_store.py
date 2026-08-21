@@ -199,12 +199,31 @@ def retrieve_legal_precedents(query: str, top_k: int = 3, db_path: str = DEFAULT
     return retrieved
 
 
-def query_precedents(query_text: str, n_results: int = 2, db_path: str = DEFAULT_DB_PATH) -> List[str]:
-    """
-    Backward-compatible helper returning plain text strings of matching documents.
-    """
-    precedents = retrieve_legal_precedents(query=query_text, top_k=n_results, db_path=db_path)
     return [p["excerpt"] for p in precedents]
+
+
+class RegulatoryVectorStore:
+    """
+    Object-oriented wrapper for ChromaDB statutory regulatory precedents retrieval.
+    """
+    def __init__(self, db_path: str = DEFAULT_DB_PATH):
+        self.db_path = db_path
+        populate_database(db_path=self.db_path)
+
+    def retrieve_relevant_precedents(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        precedents = retrieve_legal_precedents(query=query, top_k=top_k, db_path=self.db_path)
+        # Normalize keys for frontend display
+        results = []
+        for p in precedents:
+            results.append({
+                "statute": p.get("statute", "Statutory Regulation"),
+                "section": p.get("section", ""),
+                "title": p.get("title", ""),
+                "category": p.get("category", ""),
+                "text": p.get("excerpt", ""),
+                "relevance_score": p.get("relevance_score", 1.0)
+            })
+        return results
 
 
 def main():
