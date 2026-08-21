@@ -9,7 +9,7 @@ import logging
 from pydantic import BaseModel, Field, ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from agmarknet_api import AgmarknetClient
+from src.agmarknet_api import AgmarknetClient
 from src.config import DEFAULT_COMMODITIES, DEFAULT_STATES
 
 # Configure standard logging
