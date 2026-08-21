@@ -34,28 +34,57 @@ class AgmarknetClient:
         
         # Define default options if none provided
         if not commodities:
-            commodities = ["Rice", "Wheat", "Potato", "Onion", "Tomato", "Pulses"]
+            commodities = [
+                "Rice", "Wheat", "Potato", "Onion", "Tomato", "Gram Dal",
+                "Mustard Oil", "Sugar", "Turmeric", "Cotton", "Maize",
+                "Soyabean", "Groundnut", "Moong Dal", "Urad Dal", "Apple"
+            ]
         if not states:
-            states = ["Uttar Pradesh", "Punjab", "Haryana", "Maharashtra", "Gujarat"]
+            states = [
+                "Uttar Pradesh", "Punjab", "Haryana", "Maharashtra", "Gujarat",
+                "Karnataka", "Madhya Pradesh", "Rajasthan", "Tamil Nadu", "Andhra Pradesh",
+                "Bihar", "West Bengal", "Kerala", "Telangana", "Odisha"
+            ]
 
         # Map states to some districts and markets
         state_geo = {
-            "Uttar Pradesh": [("Agra", "Agra Mandi"), ("Kanpur", "Kanpur Mandi"), ("Lucknow", "Lucknow Mandi")],
-            "Punjab": [("Amritsar", "Amritsar Mandi"), ("Ludhiana", "Ludhiana Mandi"), ("Patiala", "Patiala Mandi")],
-            "Haryana": [("Karnal", "Karnal Mandi"), ("Ambala", "Ambala Mandi"), ("Rohtak", "Rohtak Mandi")],
-            "Maharashtra": [("Pune", "Pune Mandi"), ("Mumbai", "Kalyan Mandi"), ("Nashik", "Nashik Mandi")],
-            "Gujarat": [("Ahmedabad", "Ahmedabad Mandi"), ("Surat", "Surat Mandi"), ("Rajkot", "Rajkot Mandi")]
+            "Uttar Pradesh": [("Agra", "Agra Mandi"), ("Kanpur", "Kanpur Mandi"), ("Lucknow", "Lucknow Mandi"), ("Varanasi", "Varanasi Mandi")],
+            "Punjab": [("Amritsar", "Amritsar Mandi"), ("Ludhiana", "Ludhiana Mandi"), ("Patiala", "Patiala Mandi"), ("Jalandhar", "Jalandhar Mandi")],
+            "Haryana": [("Karnal", "Karnal Mandi"), ("Ambala", "Ambala Mandi"), ("Rohtak", "Rohtak Mandi"), ("Hisar", "Hisar Mandi")],
+            "Maharashtra": [("Pune", "Pune Mandi"), ("Mumbai", "Kalyan Mandi"), ("Nashik", "Nashik Mandi"), ("Nagpur", "Nagpur Mandi")],
+            "Gujarat": [("Ahmedabad", "Ahmedabad Mandi"), ("Surat", "Surat Mandi"), ("Rajkot", "Rajkot Mandi"), ("Vadodara", "Vadodara Mandi")],
+            "Karnataka": [("Bangalore", "Bangalore Mandi"), ("Mysore", "Mysore Mandi"), ("Hubli", "Hubli Mandi"), ("Belgaum", "Belgaum Mandi")],
+            "Madhya Pradesh": [("Indore", "Indore Mandi"), ("Bhopal", "Bhopal Mandi"), ("Jabalpur", "Jabalpur Mandi"), ("Ujjain", "Ujjain Mandi")],
+            "Rajasthan": [("Jaipur", "Jaipur Mandi"), ("Jodhpur", "Jodhpur Mandi"), ("Kota", "Kota Mandi"), ("Bikaner", "Bikaner Mandi")],
+            "Tamil Nadu": [("Chennai", "Koyambedu Mandi"), ("Madurai", "Madurai Mandi"), ("Coimbatore", "Coimbatore Mandi")],
+            "Andhra Pradesh": [("Guntur", "Guntur Mandi"), ("Vijayawada", "Vijayawada Mandi"), ("Kurnool", "Kurnool Mandi")],
+            "Bihar": [("Patna", "Patna Mandi"), ("Muzaffarpur", "Muzaffarpur Mandi"), ("Bhagalpur", "Bhagalpur Mandi")],
+            "West Bengal": [("Kolkata", "Kolkata Mandi"), ("Siliguri", "Siliguri Mandi"), ("Bardhaman", "Bardhaman Mandi")],
+            "Kerala": [("Kochi", "Ernakulam Mandi"), ("Kozhikode", "Kozhikode Mandi"), ("Thiruvananthapuram", "Trivandrum Mandi")],
+            "Telangana": [("Hyderabad", "Bowenpally Mandi"), ("Warangal", "Warangal Mandi"), ("Nizamabad", "Nizamabad Mandi")],
+            "Odisha": [("Bhubaneswar", "Bhubaneswar Mandi"), ("Cuttack", "Cuttack Mandi"), ("Sambalpur", "Sambalpur Mandi")]
         }
 
         # Map commodities to varieties
         commodity_varieties = {
-            "Rice": ["Basmati", "Common", "Permal"],
-            "Wheat": ["Kalyan", "Desi", "Lok-1"],
-            "Potato": ["Jyoti", "Local", "Desi"],
-            "Onion": ["Red", "White", "Nasik"],
-            "Tomato": ["Local", "Hybrid"],
-            "Pulses": ["Arhar (Tur)", "Masur", "Urad"]
+            "Rice": ["Basmati", "Common", "Permal", "Sona Masoori"],
+            "Wheat": ["Kalyan", "Desi", "Lok-1", "Sharbati"],
+            "Potato": ["Jyoti", "Local", "Desi", "Pukhraj"],
+            "Onion": ["Red", "White", "Nasik", "Garlic-Hybrid"],
+            "Tomato": ["Local", "Hybrid", "Desi", "Roma"],
+            "Gram Dal": ["Chana Desi", "Kabuli", "Local"],
+            "Mustard Oil": ["Kachi Ghani", "Refined", "Expeller"],
+            "Sugar": ["Medium", "Small", "Refined"],
+            "Turmeric": ["Salem", "Erode", "Finger"],
+            "Cotton": ["Shankar-6", "Medium Staple", "Long Staple"],
+            "Maize": ["Yellow", "White", "Hybrid"],
+            "Soyabean": ["Yellow", "Black", "Processed"],
+            "Groundnut": ["Bold", "Java", "Pod"],
+            "Moong Dal": ["Green Whole", "Split", "Washed"],
+            "Urad Dal": ["Black Matpe", "Split", "Gota"],
+            "Apple": ["Delicious", "Kashmiri", "Royal Gala"]
         }
+
 
         records = []
         delta = end - start
