@@ -32,7 +32,7 @@ jobs:
         env:
           PYTHONPATH: .
         run: |
-          pytest -v --tb=short -q
+          python -m pytest -v --tb=short -q
 
       - name: Upload test results
         if: always()

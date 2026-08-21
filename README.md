@@ -139,6 +139,8 @@ Interactive Swagger docs: `http://localhost:8000/docs`
 ## 🛠️ Installation & Setup
 
 ### Option A: Local (Recommended for Demo)
+
+#### For Linux/macOS:
 ```bash
 # 1. Clone and install
 git clone https://github.com/KaranNahta/InnoHack.git
@@ -150,6 +152,23 @@ python scripts/train_all_models.py
 
 # 3. Launch everything
 ./run_demo.sh
+```
+
+#### For Windows (PowerShell):
+```powershell
+# 1. Clone and install
+git clone https://github.com/KaranNahta/InnoHack.git
+cd InnoHack
+pip install -r requirements.txt
+
+# 2. One-command model training (builds all artifacts in ~30s)
+python scripts/train_all_models.py
+
+# 3. Launch FastAPI backend
+.venv\Scripts\uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+
+# 4. Launch Streamlit dashboard (run in a separate terminal)
+.venv\Scripts\streamlit run src/dashboard/app.py --server.port 8501 --server.headless true
 ```
 
 ### Option B: Docker
@@ -164,6 +183,7 @@ docker-compose down
 
 ## ⚡ CLI Commands
 
+### For Linux/macOS:
 ```bash
 # Train all ML models from scratch
 python scripts/train_all_models.py
@@ -172,13 +192,32 @@ python scripts/train_all_models.py
 PYTHONPATH=. python scripts/benchmark_latency.py 30
 
 # Run full 100-test verification suite
-PYTHONPATH=. .venv/bin/pytest -v
+PYTHONPATH=. pytest -v
 
 # Launch API only
-PYTHONPATH=. .venv/bin/uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+PYTHONPATH=. uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Launch dashboard only
-PYTHONPATH=. .venv/bin/streamlit run src/dashboard/app.py
+PYTHONPATH=. streamlit run src/dashboard/app.py
+```
+
+### For Windows (PowerShell):
+```powershell
+# Train all ML models from scratch
+python scripts/train_all_models.py
+
+# Run 7-stage pipeline latency benchmark (30 trials)
+$env:PYTHONPATH="."
+python scripts/benchmark_latency.py 30
+
+# Run full 100-test verification suite
+python -m pytest -v
+
+# Launch API only
+.venv\Scripts\uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Launch dashboard only
+.venv\Scripts\streamlit run src/dashboard/app.py --server.port 8501 --server.headless true
 ```
 
 ---
