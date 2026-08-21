@@ -82,6 +82,14 @@ def train_conformal_bands(
     df_val = pd.read_parquet(val_path)
     df_test = pd.read_parquet(test_path)
 
+    if len(df_train) > 100000:
+        logger.info("Downsampling train features from %d to 100000 rows for speed...", len(df_train))
+        df_train = df_train.sample(n=100000, random_state=42)
+    if len(df_val) > 20000:
+        df_val = df_val.sample(n=20000, random_state=42)
+    if len(df_test) > 20000:
+        df_test = df_test.sample(n=20000, random_state=42)
+
     cluster_df = pd.read_parquet(cluster_path) if os.path.exists(cluster_path) else None
 
     X_train, y_train = prepare_conformal_data(df_train, cluster_df)

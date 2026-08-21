@@ -52,7 +52,7 @@ def main():
     from src.data.reference_data import get_international_benchmarks, get_mrp_ceilings, get_historical_price_controls
 
     ensure_fallback_files()
-    run_macro_ingest()
+    run_macro_ingest(indicators=["all"])
 
     # Save international benchmarks & reference files
     df_bench = get_international_benchmarks()
