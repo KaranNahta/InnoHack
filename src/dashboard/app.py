@@ -285,6 +285,44 @@ if df_monitor.empty:
 st.title("⚖️ CASPER-Gov Live Regulatory Pricing Monitor")
 st.subheader("Price Band Estimation & statutory ceiling compliance alerts")
 
+# Global Sidebar Filter Configuration
+st.sidebar.markdown("### 🎛️ Regulatory Control Filters")
+
+all_skus = sorted(df_monitor["sku_name"].unique().tolist()) if not df_monitor.empty else []
+all_states = sorted(df_monitor["state"].unique().tolist()) if not df_monitor.empty else []
+all_statuses = sorted(df_monitor["compliance_status"].unique().tolist()) if not df_monitor.empty else []
+
+selected_skus = st.sidebar.multiselect(
+    "Commodity SKUs",
+    all_skus,
+    default=all_skus,
+    help="Filter commodities across all surveillance tabs"
+)
+
+selected_states = st.sidebar.multiselect(
+    "Regions / States",
+    all_states,
+    default=all_states,
+    help="Filter geographical administrative regions"
+)
+
+selected_status = st.sidebar.multiselect(
+    "Compliance Status",
+    all_statuses,
+    default=all_statuses,
+    help="Filter by CEILING_BREACHED, ELEVATED_PRICE, or WITHIN_BAND"
+)
+
+# Apply global filters
+df_filtered = df_monitor[
+    (df_monitor["sku_name"].isin(selected_skus if selected_skus else all_skus)) &
+    (df_monitor["state"].isin(selected_states if selected_states else all_states)) &
+    (df_monitor["compliance_status"].isin(selected_status if selected_status else all_statuses))
+]
+
+st.sidebar.markdown("---")
+st.sidebar.caption("⚡ **CASPER-Gov v1.0** · Real-Time Market Surveillance Engine")
+
 # Tabs
 tab_mandi, tab_audit, tab_blockchain, tab_legal_ai, tab_scenario, tab_upload = st.tabs([
     "🏪 Mandi+ Live Cards",
@@ -303,22 +341,11 @@ with tab_mandi:
     st.markdown("### 🏪 Mandi+ — Live Commodity Intelligence Cards")
     st.caption("Real-time price band status, compliance badges, and hoarding risk signals per commodity")
 
-    # Sidebar filters for Mandi+ tab
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**🏪 Mandi+ Filters**")
-    all_skus = sorted(df_monitor["sku_name"].unique().tolist()) if not df_monitor.empty else []
-    all_states = sorted(df_monitor["state"].unique().tolist()) if not df_monitor.empty else []
-    mandi_sku_filter = st.sidebar.multiselect("Commodity Filter", all_skus, default=all_skus[:6] if len(all_skus) >= 6 else all_skus, key="mandi_sku")
-    mandi_state_filter = st.sidebar.selectbox("State Filter", ["All States"] + all_states, key="mandi_state")
-
-    if df_monitor.empty:
-        st.warning("No monitoring data available. Ensure models are trained and data pipeline has run.")
+    if df_filtered.empty:
+        st.warning("No records match the current sidebar filter selection.")
     else:
-        df_cards = df_monitor.copy()
-        if mandi_sku_filter:
-            df_cards = df_cards[df_cards["sku_name"].isin(mandi_sku_filter)]
-        if mandi_state_filter != "All States":
-            df_cards = df_cards[df_cards["state"] == mandi_state_filter]
+        df_cards = df_filtered.copy()
+
 
         # Aggregate: one row per SKU (latest date, averaged across mandis)
         price_col = "observed_price" if "observed_price" in df_cards.columns else "modal_price_per_quintal"
@@ -533,19 +560,8 @@ with tab_mandi:
 
 # --- TAB 1: AUDIT MONITOR ---
 with tab_audit:
-    st.sidebar.header("🔍 Filters Configuration")
-    states_list = sorted(list(df_monitor["state"].unique()))
-    selected_states = st.sidebar.multiselect("Select Regions/States", states_list, default=states_list)
-    sku_list = sorted(list(df_monitor["sku_name"].unique()))
-    selected_skus = st.sidebar.multiselect("Select Commodity Category", sku_list, default=sku_list)
-    status_list = sorted(list(df_monitor["compliance_status"].unique()))
-    selected_status = st.sidebar.multiselect("Select Compliance Status", status_list, default=status_list)
+    st.markdown("### 📋 Active Market Pricing Audit Table & Metrics")
 
-    df_filtered = df_monitor[
-        (df_monitor["state"].isin(selected_states)) &
-        (df_monitor["sku_name"].isin(selected_skus)) &
-        (df_monitor["compliance_status"].isin(selected_status))
-    ]
 
     col1, col2, col3, col4 = st.columns(4)
     total_mandis = len(df_filtered)
