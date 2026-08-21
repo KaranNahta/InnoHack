@@ -199,6 +199,11 @@ def retrieve_legal_precedents(query: str, top_k: int = 3, db_path: str = DEFAULT
     return retrieved
 
 
+def query_precedents(query_text: str, n_results: int = 2, db_path: str = DEFAULT_DB_PATH) -> List[str]:
+    """
+    Backward-compatible helper returning plain text strings of matching documents.
+    """
+    precedents = retrieve_legal_precedents(query=query_text, top_k=n_results, db_path=db_path)
     return [p["excerpt"] for p in precedents]
 
 
