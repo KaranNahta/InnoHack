@@ -655,13 +655,13 @@ with tab_mandi:
             cartel_sku = st.selectbox("Select Commodity for Cartel Topology Analysis", all_skus, key="cartel_sku_select")
             cartel_fig, cartel_cliques = build_cartel_network_figure(df_monitor, selected_sku=cartel_sku)
             if cartel_fig is not None:
-                st.plotly_chart(cartel_fig, use_container_width=True)
+                st.plotly_chart(cartel_fig, width='stretch')
             else:
                 st.info("📊 Graph visualization requires `plotly` (`pip install plotly`).")
         with c_col2:
             st.markdown(f"#### 🚨 Detected Collusion Syndicates ({len(cartel_cliques)} Links)")
             if cartel_cliques:
-                st.dataframe(pd.DataFrame(cartel_cliques), use_container_width=True)
+                st.dataframe(pd.DataFrame(cartel_cliques), width='stretch')
                 st.warning(f"⚠️ **Antitrust Alert:** {len(cartel_cliques)} mandi pairs exhibit statistically anomalous price synchronization under Section 3(3)(a) Competition Act 2002.")
             else:
                 st.success("✅ **Competitive Pricing:** No abnormal inter-mandi price synchronization detected.")
@@ -726,7 +726,7 @@ with tab_audit:
         df_page = df_presentation.iloc[start_idx:end_idx]
         st.dataframe(
             df_page.style.apply(highlight_breaches, axis=1),
-            use_container_width=True,
+            width='stretch',
             height=500
         )
     else:
@@ -758,7 +758,7 @@ with tab_audit:
     with st.expander("📜 View Cryptographic Audit Log Entries (Latest 10 Blocks)", expanded=False):
         if recent_logs:
             df_logs = pd.DataFrame(recent_logs)[["id", "timestamp", "sku_id", "region", "anomaly_type", "observed_price", "prev_hash", "entry_hash"]]
-            st.dataframe(df_logs, use_container_width=True)
+            st.dataframe(df_logs, width='stretch')
         else:
             st.info("No audit entries recorded yet. Generate an enforcement notice or run predictions to append blocks.")
 
@@ -807,7 +807,7 @@ with tab_blockchain:
 
     t_col1, t_col2, t_col3 = st.columns([2, 2, 2])
     with t_col1:
-        if st.button("🚨 Simulate Database Tampering", key="btn_tamper_sim", use_container_width=True):
+        if st.button("🚨 Simulate Database Tampering", key="btn_tamper_sim", width='stretch'):
             res = simulate_audit_tampering()
             if res.get("success"):
                 st.warning(f"⚠️ {res.get('message')}")
@@ -816,7 +816,7 @@ with tab_blockchain:
                 st.info(res.get("message"))
 
     with t_col2:
-        if st.button("🔍 Cryptographically Verify Chain", key="btn_verify_sim", use_container_width=True):
+        if st.button("🔍 Cryptographically Verify Chain", key="btn_verify_sim", width='stretch'):
             res = verify_audit_trail()
             if res.get("chain_valid"):
                 st.success(f"✅ Mathematical Proof Verified: {res.get('message', 'Chain valid')}")
@@ -824,7 +824,7 @@ with tab_blockchain:
                 st.error(f"❌ TAMPER DETECTED! {res.get('message')}")
 
     with t_col3:
-        if st.button("🛡️ Restore & Re-Seal Chain", key="btn_repair_sim", use_container_width=True):
+        if st.button("🛡️ Restore & Re-Seal Chain", key="btn_repair_sim", width='stretch'):
             res = repair_tampered_audit_trail()
             st.success(f"✅ {res.get('message')}")
             st.rerun()
@@ -836,7 +836,7 @@ with tab_blockchain:
         df_all_logs = pd.DataFrame(all_logs)
         display_cols = ["id", "timestamp", "sku_id", "region", "anomaly_type", "observed_price", "prev_hash", "entry_hash"]
         available_cols = [c for c in display_cols if c in df_all_logs.columns]
-        st.dataframe(df_all_logs[available_cols], use_container_width=True, height=350)
+        st.dataframe(df_all_logs[available_cols], width='stretch', height=350)
     else:
         st.info("Ledger initialized. Run a price estimate or scenario to create genesis transactions.")
 
@@ -868,13 +868,13 @@ with tab_legal_ai:
     qc1, qc2, qc3 = st.columns(3)
     prompt_to_submit = None
     with qc1:
-        if st.button("⚖️ What are penal provisions under ECA 1955 for price gouging?", use_container_width=True):
+        if st.button("⚖️ What are penal provisions under ECA 1955 for price gouging?", width='stretch'):
             prompt_to_submit = "What are penal provisions and search/seizure powers under Section 3 and Section 7 of ECA 1955 for price gouging?"
     with qc2:
-        if st.button("🧅 How does Competition Act 2002 §3(3)(a) apply to Mandi cartels?", use_container_width=True):
+        if st.button("🧅 How does Competition Act 2002 §3(3)(a) apply to Mandi cartels?", width='stretch'):
             prompt_to_submit = "How does Section 3(3)(a) of Competition Act 2002 apply to inter-mandi price fixing and vendor collusion?"
     with qc3:
-        if st.button("📦 What are mandatory packaging rules under Legal Metrology 2011?", use_container_width=True):
+        if st.button("📦 What are mandatory packaging rules under Legal Metrology 2011?", width='stretch'):
             prompt_to_submit = "What are the price declaration rules and penalties under Legal Metrology Packaged Commodities Rules 2011?"
 
     # Display existing chat messages
@@ -1068,7 +1068,7 @@ with tab_scenario:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=0, r=0, t=40, b=0), height=500
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
 # --- TAB 3: BATCH RISK UPLOADER ---
 with tab_upload:
@@ -1082,7 +1082,7 @@ with tab_upload:
         {"sku_name": "Potato", "state": "Maharashtra", "district": "Pune", "market_mandi": "Pune Mandi", "sku_variety": "Local", "observed_price": 1800.0}
     ])
     st.markdown("**Expected CSV Columns Formatting Structure:**")
-    st.dataframe(sample_df, use_container_width=True)
+    st.dataframe(sample_df, width='stretch')
     
     uploaded_file = st.file_uploader("Upload CSV transaction file", type=["csv"], key="batch_risk_csv")
     
@@ -1156,7 +1156,7 @@ with tab_upload:
                         height=280,
                         legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5)
                     )
-                    st.plotly_chart(fig_donut, use_container_width=True)
+                    st.plotly_chart(fig_donut, width='stretch')
                 else:
                     st.write("No active risk distributions.")
                     
@@ -1173,7 +1173,7 @@ with tab_upload:
                         
                 st.dataframe(
                     df_res.style.apply(highlight_risk, axis=1),
-                    use_container_width=True,
+                    width='stretch',
                     height=300
                 )
                 
