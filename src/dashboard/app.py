@@ -195,8 +195,116 @@ def predict_local_batch(df_up: pd.DataFrame) -> pd.DataFrame:
         })
     return pd.DataFrame(records)
 
+
+# ─────────────────────────────────────────────────────────────
+# AUTO-BOOTSTRAP: Generate datasets if parquet files are missing
+# (e.g. first deploy on Streamlit Cloud where data/ is gitignored)
+# ─────────────────────────────────────────────────────────────
+def bootstrap_data_if_needed():
+    """
+    Auto-generates all required parquet data if any are missing.
+    Runs on Streamlit Cloud where data/ is not committed to git.
+    """
+    import os
+    from datetime import datetime as dt
+
+    needs_bootstrap = not all(os.path.exists(p) for p in [
+        TEST_FEAT_PATH, VENDORS_PATH, CLUSTERS_PATH
+    ])
+
+    if not needs_bootstrap:
+        return
+
+    with st.spinner("⏳ First-time setup: generating Agmarknet data pipeline (takes ~30 sec)..."):
+        try:
+            import sys
+            sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+            from src.data.agmarknet_ingest import (
+                fetch_daily_mandi_prices,
+                normalize_agmarknet_schema,
+                validate_agmarknet_schema,
+                save_raw_agmarknet_data,
+            )
+            from src.data.vendor_registry import generate_vendor_registry, save_vendor_registry
+            from src.features.build_features import transform_features
+            from src.models.goods_clustering import run_goods_clustering
+
+            # 1. Ingest 60 days from Agmarknet
+            end = dt.now().strftime("%Y-%m-%d")
+            start = (dt.now() - pd.Timedelta(days=60)).strftime("%Y-%m-%d")
+            df_raw = fetch_daily_mandi_prices(start_date=start, end_date=end)
+            df_norm = normalize_agmarknet_schema(df_raw)
+            df_clean = validate_agmarknet_schema(df_norm)
+            os.makedirs("data/raw/agmarknet", exist_ok=True)
+            save_raw_agmarknet_data(df_clean, output_dir="data/raw/agmarknet")
+            df_clean.to_parquet("data/raw/agmarknet_combined.parquet", index=False)
+
+            # 2. Vendor registry
+            df_v = generate_vendor_registry(n_vendors=100)
+            save_vendor_registry(df_v, output_path=VENDORS_PATH)
+
+            # 3. Feature engineering
+            df_feat = transform_features(df_clean)
+            os.makedirs("data/features", exist_ok=True)
+            df_feat.to_parquet(TEST_FEAT_PATH, index=False)
+            df_feat.to_parquet("data/features/train_features.parquet", index=False)
+
+            # 4. Clustering
+            run_goods_clustering(input_features_path="data/features/train_features.parquet")
+
+            st.success("✅ Data pipeline bootstrapped successfully!")
+        except Exception as ex:
+            st.warning(f"⚠️ Auto-bootstrap encountered an issue: {ex}. Using demo fallback data.")
+            _generate_demo_fallback_data()
+
+
+def _generate_demo_fallback_data():
+    """Generates minimal in-memory demo data if the full pipeline fails."""
+    import os
+    import numpy as np
+
+    rng = np.random.RandomState(42)
+    skus = ["Rice", "Wheat", "Potato", "Onion", "Tomato", "Gram Dal",
+            "Mustard Oil", "Sugar", "Maize", "Moong Dal", "Urad Dal",
+            "Turmeric", "Cotton", "Groundnut", "Soyabean", "Apple"]
+    states = ["Uttar Pradesh", "Punjab", "Maharashtra", "Gujarat", "Karnataka",
+              "Madhya Pradesh", "Rajasthan", "Tamil Nadu", "Andhra Pradesh",
+              "Bihar", "West Bengal", "Kerala", "Telangana", "Haryana", "Odisha"]
+    mandis = {s: [f"{s[:4].strip()} Mandi A", f"{s[:4].strip()} Mandi B"] for s in states}
+
+    records = []
+    today = pd.Timestamp.today().normalize()
+    for sku in skus:
+        base = rng.uniform(800, 4000)
+        for state in states:
+            for mandi in mandis[state]:
+                obs = float(base * rng.uniform(0.9, 1.3))
+                p90 = float(base * 1.1)
+                records.append({
+                    "observation_date": today.strftime("%Y-%m-%d"),
+                    "sku_name": sku, "state": state, "market_mandi": mandi,
+                    "vendor_id": f"VEND_{rng.randint(1, 100):04d}",
+                    "modal_price_per_quintal": obs, "observed_price": obs,
+                    "p10_floor": float(base * 0.85), "p50_mid": float(base),
+                    "p90_ceiling": p90,
+                    "compliance_status": "CEILING_BREACHED" if obs > p90 else "WITHIN_BAND",
+                })
+
+    df = pd.DataFrame(records)
+    os.makedirs("data/features", exist_ok=True)
+    os.makedirs("data/raw", exist_ok=True)
+    df.to_parquet(TEST_FEAT_PATH, index=False)
+    df[["vendor_id", "state", "sku_name"]].rename(columns={"state": "region", "sku_name": "registered_skus"}).to_parquet(VENDORS_PATH, index=False)
+    df[["sku_name"]].drop_duplicates().assign(cluster_id=0).to_parquet(CLUSTERS_PATH, index=False)
+
+
+# Run bootstrap on every cold start
+bootstrap_data_if_needed()
+
 @st.cache_data(ttl=60)
 def load_monitoring_data():
+
     """
     Fetches live monitoring data from FastAPI.
     Falls back to direct computation if the API is offline.
