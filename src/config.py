@@ -1,22 +1,16 @@
 # Configuration settings for Agmarknet Ingestion module
 
-# Default commodities to query if none are specified
 DEFAULT_COMMODITIES = [
-    "Rice",
-    "Wheat",
-    "Potato",
-    "Onion",
-    "Tomato",
-    "Pulses"
+    "Rice", "Wheat", "Potato", "Onion", "Tomato", "Gram Dal",
+    "Mustard Oil", "Sugar", "Turmeric", "Cotton", "Maize",
+    "Soyabean", "Groundnut", "Moong Dal", "Urad Dal", "Apple"
 ]
 
 # Default target states (None or empty list means all states)
 DEFAULT_STATES = [
-    "Uttar Pradesh",
-    "Punjab",
-    "Haryana",
-    "Maharashtra",
-    "Gujarat"
+    "Uttar Pradesh", "Punjab", "Haryana", "Maharashtra", "Gujarat",
+    "Karnataka", "Madhya Pradesh", "Rajasthan", "Tamil Nadu", "Andhra Pradesh",
+    "Bihar", "West Bengal", "Kerala", "Telangana", "Odisha"
 ]
 
 # Rate-limiting parameters
